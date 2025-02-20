@@ -10,7 +10,7 @@ local Window = ArrayField:CreateWindow({
         FileName = "RinnsHub"
     },
     Discord = {
-        Enabled = true,
+        Enabled = false,
         Invite = "Mt9F5nc8Tg",
         RememberJoins = false
     },
