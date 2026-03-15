@@ -1689,19 +1689,27 @@ local function createSettings(window)
 	if not (writefile and isfile and readfile and isfolder and makefolder) and not useStudio then
 		if Topbar['Settings'] then Topbar.Settings.Visible = false end
 		Topbar['Search'].Position = UDim2.new(1, -75, 0.5, 0)
-		warn('Can\'t create settings as no file-saving functionality is available.')
+		warn("Can't create settings as no file-saving functionality is available.")
 		return
 	end
 
-	-- Profile Management UI
-	local profileTab = window:CreateTab('Profiles', 0, true)
-	profileTab:CreateSection("Profile Management")
+	-- Rayfield Settings Tab
+	local newTab = window:CreateTab('Rayfield Settings', 0, true)
+	if TabList['Rayfield Settings'] then
+		TabList['Rayfield Settings'].LayoutOrder = 1000
+	end
+	if Elements['Rayfield Settings'] then
+		Elements['Rayfield Settings'].LayoutOrder = 1000
+	end
+
+	-- Profile Management Section
+	newTab:CreateSection("Profile Management")
 	local profiles = ListProfiles()
 	local currentProfile = profiles[1] or "default"
 	local profileDropdown
 	local profileInput
 
-	profileDropdown = profileTab:CreateDropdown({
+	profileDropdown = newTab:CreateDropdown({
 		Name = "Select Profile",
 		Options = profiles,
 		CurrentOption = currentProfile,
@@ -1709,9 +1717,8 @@ local function createSettings(window)
 			currentProfile = selected
 		end
 	})
-	print("[Profiles] Dropdown created")
 
-	profileInput = profileTab:CreateInput({
+	profileInput = newTab:CreateInput({
 		Name = "Profile Name",
 		CurrentValue = currentProfile,
 		PlaceholderText = "Enter profile name...",
@@ -1719,9 +1726,8 @@ local function createSettings(window)
 			currentProfile = val
 		end
 	})
-	print("[Profiles] Input created")
 
-	profileTab:CreateButton({
+	newTab:CreateButton({
 		Name = "Save Profile",
 		Callback = function()
 			SaveProfile(currentProfile)
@@ -1729,27 +1735,24 @@ local function createSettings(window)
 			profileDropdown:Set(ListProfiles())
 		end
 	})
-	print("[Profiles] Save Profile button created")
 
-	profileTab:CreateButton({
+	newTab:CreateButton({
 		Name = "Load Profile",
 		Callback = function()
 			LoadProfile(currentProfile)
 			RayfieldLibrary:Notify({Title = "Profile Loaded", Content = "Profile '"..currentProfile.."' loaded."})
 		end
 	})
-	print("[Profiles] Load Profile button created")
 
-	profileTab:CreateButton({
+	newTab:CreateButton({
 		Name = "Overwrite Profile",
 		Callback = function()
 			SaveProfile(currentProfile)
 			RayfieldLibrary:Notify({Title = "Profile Overwritten", Content = "Profile '"..currentProfile.."' overwritten."})
 		end
 	})
-	print("[Profiles] Overwrite Profile button created")
 
-	profileTab:CreateButton({
+	newTab:CreateButton({
 		Name = "Delete Profile",
 		Callback = function()
 			DeleteProfile(currentProfile)
@@ -1757,9 +1760,8 @@ local function createSettings(window)
 			profileDropdown:Set(ListProfiles())
 		end
 	})
-	print("[Profiles] Delete Profile button created")
 
-	profileTab:CreateButton({
+	newTab:CreateButton({
 		Name = "Rename Profile",
 		Callback = function()
 			local newName = profileInput:Get()
@@ -1772,29 +1774,10 @@ local function createSettings(window)
 			end
 		end
 	})
-	print("[Profiles] Rename Profile button created")
 
-	local newTab = window:CreateTab('Rayfield Settings', 0, true)
-
-	if TabList['Rayfield Settings'] then
-		TabList['Rayfield Settings'].LayoutOrder = 1000
-	end
-
-
-	local rayfieldSettingsTab = Elements:FindFirstChild('Rayfield Settings')
-	if rayfieldSettingsTab then
-		rayfieldSettingsTab.LayoutOrder = 1000
-		rayfieldSettingsTab.Visible = true
-	else
-		warn("[Rayfield] 'Rayfield Settings' tab was not created in Elements. Check tab creation logic.")
-	end
-
-
-	-- Create sections and elements
-	local toggleKeybinds = {}
+	-- Settings Sections
 	for categoryName, settingCategory in pairs(settingsTable) do
 		newTab:CreateSection(categoryName)
-
 		for settingName, setting in pairs(settingCategory) do
 			if setting.Type == 'input' then
 				setting.Element = newTab:CreateInput({
@@ -1816,32 +1799,6 @@ local function createSettings(window)
 						updateSetting(categoryName, settingName, Value)
 					end,
 				})
-				-- Tambahkan keybind untuk toggle ini
-				local keybindName = setting.Name .. " Toggle Keybind"
-				toggleKeybinds[#toggleKeybinds+1] = {
-					setting = setting,
-					keybind = newTab:CreateKeybind({
-						Name = keybindName,
-						CurrentKeybind = "",
-						HoldToInteract = false,
-						Ext = true,
-						CallOnChange = true,
-						Callback = function(Key)
-							if Key and Key ~= "" then
-								-- Daftarkan listener key
-								if setting._keybindConn then setting._keybindConn:Disconnect() end
-								setting._keybindConn = game:GetService("UserInputService").InputBegan:Connect(function(input, processed)
-									if not processed and input.KeyCode and tostring(input.KeyCode) == Key then
-										setting.Element:Set(not setting.Element.CurrentValue)
-									end
-								end)
-							elseif setting._keybindConn then
-								setting._keybindConn:Disconnect()
-								setting._keybindConn = nil
-							end
-						end,
-					})
-				}
 			elseif setting.Type == 'bind' then
 				setting.Element = newTab:CreateKeybind({
 					Name = setting.Name,
@@ -1857,7 +1814,7 @@ local function createSettings(window)
 		end
 	end
 
-	-- Tambahkan pengaturan tema (theme selector)
+	-- Theme selector
 	newTab:CreateSection("Theme")
 	local themeList = {}
 	for themeName, _ in pairs(RayfieldLibrary.Theme) do
@@ -1884,19 +1841,6 @@ local function createSettings(window)
 	})
 
 	settingsCreated = true
-
-	-- Add event handler for Topbar.Settings to open Rayfield Settings tab
-	if Topbar and Topbar:FindFirstChild('Settings') then
-		Topbar.Settings.MouseButton1Click:Connect(function()
-			local settingsTab = Elements:FindFirstChild('Rayfield Settings')
-			if settingsTab then
-				Elements.UIPageLayout:JumpTo(settingsTab)
-				print("[Rayfield] Navigated to Rayfield Settings tab via Topbar.Settings button")
-			else
-				warn("[Rayfield] Settings tab not found when clicking Topbar.Settings!")
-			end
-		end)
-	end
 	loadSettings()
 	saveSettings()
 end
