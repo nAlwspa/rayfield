@@ -1929,6 +1929,11 @@ end
 
 
 function RayfieldLibrary:CreateWindow(Settings)
+	if not Settings or type(Settings) ~= 'table' then
+		warn('[Rayfield Debug] CreateWindow called with nil or invalid Settings, using defaults.')
+		Settings = {}
+	end
+
 	if Rayfield:FindFirstChild('Loading') then
 		if getgenv and not getgenv().rayfieldCached then
 			Rayfield.Enabled = true
