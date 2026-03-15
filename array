@@ -3933,6 +3933,7 @@ Topbar.Search.MouseButton1Click:Connect(function()
 end)
 
 if Topbar:FindFirstChild('Settings') then
+	Topbar.Settings.Visible = true -- Always visible
 	Topbar.Settings.MouseButton1Click:Connect(function()
 		task.spawn(function()
 			for _, OtherTabButton in ipairs(TabList:GetChildren()) do
@@ -3946,16 +3947,14 @@ if Topbar:FindFirstChild('Settings') then
 					TweenService:Create(OtherTabButton.UIStroke, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {Transparency = 0.5}):Play()
 				end
 			end
-
-			   local rayfieldSettingsTab = Elements:FindFirstChild('Rayfield Settings')
-			   if rayfieldSettingsTab then
-				   Elements.UIPageLayout:JumpTo(rayfieldSettingsTab)
-			   else
-				   warn("[Rayfield] Rayfield Settings tab not found in Elements! Navigation skipped.")
-			   end
+			local rayfieldSettingsTab = Elements:FindFirstChild('Rayfield Settings')
+			if rayfieldSettingsTab then
+				Elements.UIPageLayout:JumpTo(rayfieldSettingsTab)
+			else
+				warn("[Rayfield] Rayfield Settings tab not found in Elements! Navigation skipped.")
+			end
 		end)
 	end)
-
 end
 
 
