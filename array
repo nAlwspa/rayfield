@@ -4048,7 +4048,14 @@ if Topbar:FindFirstChild('Settings') then
 		   end
 		   local rayfieldSettingsTab = Elements and Elements:FindFirstChild('Rayfield Settings')
 		   if rayfieldSettingsTab and Elements.UIPageLayout then
-end)
+			   Elements.UIPageLayout:JumpTo(rayfieldSettingsTab)
+		   else
+			   warn("[Rayfield] Rayfield Settings tab not found in Elements! Navigation skipped.")
+		   end
+	   end)
+   end)
+end
+
 
 hideHotkeyConnection = UserInputService.InputBegan:Connect(function(input, processed)
 	if (input.KeyCode == Enum.KeyCode[getSetting("General", "rayfieldOpen")]) and not processed then
