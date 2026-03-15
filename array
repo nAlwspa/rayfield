@@ -1938,6 +1938,7 @@ function RayfieldLibrary:CreateWindow(Settings)
 			Rayfield.Loading.Visible = false
 		end
 	end
+end
 
 	if getgenv then getgenv().rayfieldCached = true end
 
@@ -2302,7 +2303,8 @@ function RayfieldLibrary:CreateWindow(Settings)
 		else
 			Passthrough = true
 		end
-	end
+	
+
 	if Settings.KeySystem then
 		repeat task.wait() until Passthrough
 	end
@@ -4028,30 +4030,24 @@ if Topbar:FindFirstChild('Settings') then
 		   else
 			   warn('[Rayfield Debug] Window is nil or not a table, cannot create settings tab.')
 		   end
-		   for _, OtherTabButton in ipairs(TabList:GetChildren()) do
-			   if OtherTabButton.Name ~= "Template" and OtherTabButton.ClassName == "Frame" and OtherTabButton ~= TabButton and OtherTabButton.Name ~= "Placeholder" then
-				   TweenService:Create(OtherTabButton, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.TabBackground}):Play()
-				   TweenService:Create(OtherTabButton.Title, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {TextColor3 = SelectedTheme.TabTextColor}):Play()
-				   TweenService:Create(OtherTabButton.Image, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {ImageColor3 = SelectedTheme.TabTextColor}):Play()
-				   TweenService:Create(OtherTabButton, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0.7}):Play()
-				   TweenService:Create(OtherTabButton.Title, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {TextTransparency = 0.2}):Play()
-				   TweenService:Create(OtherTabButton.Image, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {ImageTransparency = 0.2}):Play()
-				   TweenService:Create(OtherTabButton.UIStroke, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {Transparency = 0.5}):Play()
+		   if TabList then
+			   for _, OtherTabButton in ipairs(TabList:GetChildren()) do
+				   if OtherTabButton.Name ~= "Template" and OtherTabButton.ClassName == "Frame" and OtherTabButton.Name ~= "Placeholder" then
+					   TweenService:Create(OtherTabButton, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.TabBackground}):Play()
+					   local title = OtherTabButton:FindFirstChild('Title')
+					   local image = OtherTabButton:FindFirstChild('Image')
+					   local uiStroke = OtherTabButton:FindFirstChild('UIStroke')
+					   if title then TweenService:Create(title, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {TextColor3 = SelectedTheme.TabTextColor}):Play() end
+					   if image then TweenService:Create(image, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {ImageColor3 = SelectedTheme.TabTextColor}):Play() end
+					   TweenService:Create(OtherTabButton, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0.7}):Play()
+					   if title then TweenService:Create(title, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {TextTransparency = 0.2}):Play() end
+					   if image then TweenService:Create(image, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {ImageTransparency = 0.2}):Play() end
+					   if uiStroke then TweenService:Create(uiStroke, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {Transparency = 0.5}):Play() end
+				   end
 			   end
 		   end
-		   local rayfieldSettingsTab = Elements:FindFirstChild('Rayfield Settings')
-		   if rayfieldSettingsTab then
-			   Elements.UIPageLayout:JumpTo(rayfieldSettingsTab)
-		   else
-			   warn("[Rayfield] Rayfield Settings tab not found in Elements! Navigation skipped.")
-		   end
-	   end)
-   end)
-end
-
-
-Topbar.Hide.MouseButton1Click:Connect(function()
-	setVisibility(Hidden, not useMobileSizing)
+		   local rayfieldSettingsTab = Elements and Elements:FindFirstChild('Rayfield Settings')
+		   if rayfieldSettingsTab and Elements.UIPageLayout then
 end)
 
 hideHotkeyConnection = UserInputService.InputBegan:Connect(function(input, processed)
