@@ -1685,162 +1685,224 @@ local function updateSetting(category: string, setting: string, value: any)
 end
 
 
+
 local function createSettings(window)
-	if not (writefile and isfile and readfile and isfolder and makefolder) and not useStudio then
-		if Topbar['Settings'] then Topbar.Settings.Visible = false end
-		Topbar['Search'].Position = UDim2.new(1, -75, 0.5, 0)
-		warn("Can't create settings as no file-saving functionality is available.")
-		return
-	end
+   if RayfieldDebug then warn('[Rayfield Debug] Entered createSettings') end
+   -- Check all dependencies before proceeding
+   if not (writefile and isfile and readfile and isfolder and makefolder) and not useStudio then
+	   if Topbar and Topbar['Settings'] then Topbar.Settings.Visible = false end
+	   if Topbar and Topbar['Search'] then Topbar['Search'].Position = UDim2.new(1, -75, 0.5, 0) end
+	   warn("Can't create settings as no file-saving functionality is available.")
+	   return
+   end
+   if not window then
+	   warn('[Rayfield Debug] createSettings: window is nil!')
+	   return
+   end
+   if not TabList then warn('[Rayfield Debug] createSettings: TabList is nil!') end
+   if not Elements then warn('[Rayfield Debug] createSettings: Elements is nil!') end
+   if not settingsTable then warn('[Rayfield Debug] createSettings: settingsTable is nil!') end
 
-	-- Rayfield Settings Tab
-	local newTab = window:CreateTab('Rayfield Settings', 0, true)
-	if TabList['Rayfield Settings'] then
-		TabList['Rayfield Settings'].LayoutOrder = 1000
-	end
-	if Elements['Rayfield Settings'] then
-		Elements['Rayfield Settings'].LayoutOrder = 1000
-	end
+   local ok, newTab = pcall(function()
+	   return window:CreateTab('Rayfield Settings', 0, true)
+   end)
+   if not ok or not newTab then
+	   warn('[Rayfield Debug] createSettings: Failed to create Rayfield Settings tab')
+	   return
+   end
+   if TabList and TabList['Rayfield Settings'] then
+	   TabList['Rayfield Settings'].LayoutOrder = 1000
+   end
+   if Elements and Elements['Rayfield Settings'] then
+	   Elements['Rayfield Settings'].LayoutOrder = 1000
+   end
 
-	-- Profile Management Section
-	newTab:CreateSection("Profile Management")
-	local profiles = ListProfiles()
-	local currentProfile = profiles[1] or "default"
-	local profileDropdown
-	local profileInput
+   -- Profile Management Section
+   local okSection = pcall(function()
+	   newTab:CreateSection("Profile Management")
+   end)
+   if not okSection then warn('[Rayfield Debug] createSettings: Failed to create Profile Management section') end
 
-	profileDropdown = newTab:CreateDropdown({
-		Name = "Select Profile",
-		Options = profiles,
-		CurrentOption = currentProfile,
-		Callback = function(selected)
-			currentProfile = selected
-		end
-	})
+   local profiles = {}
+   local okProfiles = pcall(function()
+	   profiles = ListProfiles()
+   end)
+   if not okProfiles then warn('[Rayfield Debug] createSettings: Failed to list profiles') end
+   local currentProfile = (profiles and profiles[1]) or "default"
+   local profileDropdown, profileInput
 
-	profileInput = newTab:CreateInput({
-		Name = "Profile Name",
-		CurrentValue = currentProfile,
-		PlaceholderText = "Enter profile name...",
-		Callback = function(val)
-			currentProfile = val
-		end
-	})
+   local okDropdown = pcall(function()
+	   profileDropdown = newTab:CreateDropdown({
+		   Name = "Select Profile",
+		   Options = profiles,
+		   CurrentOption = currentProfile,
+		   Callback = function(selected)
+			   currentProfile = selected
+		   end
+	   })
+   end)
+   if not okDropdown then warn('[Rayfield Debug] createSettings: Failed to create profile dropdown') end
 
-	newTab:CreateButton({
-		Name = "Save Profile",
-		Callback = function()
-			SaveProfile(currentProfile)
-			RayfieldLibrary:Notify({Title = "Profile Saved", Content = "Profile '"..currentProfile.."' saved."})
-			profileDropdown:Set(ListProfiles())
-		end
-	})
 
-	newTab:CreateButton({
-		Name = "Load Profile",
-		Callback = function()
-			LoadProfile(currentProfile)
-			RayfieldLibrary:Notify({Title = "Profile Loaded", Content = "Profile '"..currentProfile.."' loaded."})
-		end
-	})
+	   local okInput = pcall(function()
+		   profileInput = newTab:CreateInput({
+			   Name = "Profile Name",
+			   CurrentValue = currentProfile,
+			   PlaceholderText = "Enter profile name...",
+			   Callback = function(val)
+				   currentProfile = val
+			   end
+		   })
+	   end)
+	   if not okInput then warn('[Rayfield Debug] createSettings: Failed to create profile input') end
 
-	newTab:CreateButton({
-		Name = "Overwrite Profile",
-		Callback = function()
-			SaveProfile(currentProfile)
-			RayfieldLibrary:Notify({Title = "Profile Overwritten", Content = "Profile '"..currentProfile.."' overwritten."})
-		end
-	})
+	   local okSaveBtn = pcall(function()
+		   newTab:CreateButton({
+			   Name = "Save Profile",
+			   Callback = function()
+				   SaveProfile(currentProfile)
+				   RayfieldLibrary:Notify({Title = "Profile Saved", Content = "Profile '"..currentProfile.."' saved."})
+				   if profileDropdown and profileDropdown.Set then profileDropdown:Set(ListProfiles()) end
+			   end
+		   })
+	   end)
+	   if not okSaveBtn then warn('[Rayfield Debug] createSettings: Failed to create Save Profile button') end
 
-	newTab:CreateButton({
-		Name = "Delete Profile",
-		Callback = function()
-			DeleteProfile(currentProfile)
-			RayfieldLibrary:Notify({Title = "Profile Deleted", Content = "Profile '"..currentProfile.."' deleted."})
-			profileDropdown:Set(ListProfiles())
-		end
-	})
+	   local okLoadBtn = pcall(function()
+		   newTab:CreateButton({
+			   Name = "Load Profile",
+			   Callback = function()
+				   LoadProfile(currentProfile)
+				   RayfieldLibrary:Notify({Title = "Profile Loaded", Content = "Profile '"..currentProfile.."' loaded."})
+			   end
+		   })
+	   end)
+	   if not okLoadBtn then warn('[Rayfield Debug] createSettings: Failed to create Load Profile button') end
 
-	newTab:CreateButton({
-		Name = "Rename Profile",
-		Callback = function()
-			local newName = profileInput:Get()
-			if newName and newName ~= currentProfile then
-				RenameProfile(currentProfile, newName)
-				RayfieldLibrary:Notify({Title = "Profile Renamed", Content = "Profile renamed to '"..newName.."'."})
-				profileDropdown:Set(ListProfiles())
-				currentProfile = newName
-				profileDropdown:Set(newName)
-			end
-		end
-	})
+	   local okOverwriteBtn = pcall(function()
+		   newTab:CreateButton({
+			   Name = "Overwrite Profile",
+			   Callback = function()
+				   SaveProfile(currentProfile)
+				   RayfieldLibrary:Notify({Title = "Profile Overwritten", Content = "Profile '"..currentProfile.."' overwritten."})
+			   end
+		   })
+	   end)
+	   if not okOverwriteBtn then warn('[Rayfield Debug] createSettings: Failed to create Overwrite Profile button') end
+
+	   local okDeleteBtn = pcall(function()
+		   newTab:CreateButton({
+			   Name = "Delete Profile",
+			   Callback = function()
+				   DeleteProfile(currentProfile)
+				   RayfieldLibrary:Notify({Title = "Profile Deleted", Content = "Profile '"..currentProfile.."' deleted."})
+				   if profileDropdown and profileDropdown.Set then profileDropdown:Set(ListProfiles()) end
+			   end
+		   })
+	   end)
+	   if not okDeleteBtn then warn('[Rayfield Debug] createSettings: Failed to create Delete Profile button') end
+
+	   local okRenameBtn = pcall(function()
+		   newTab:CreateButton({
+			   Name = "Rename Profile",
+			   Callback = function()
+				   local newName = profileInput and profileInput.Get and profileInput:Get() or nil
+				   if newName and newName ~= currentProfile then
+					   RenameProfile(currentProfile, newName)
+					   RayfieldLibrary:Notify({Title = "Profile Renamed", Content = "Profile renamed to '"..newName.."'."})
+					   if profileDropdown and profileDropdown.Set then profileDropdown:Set(ListProfiles()) end
+					   currentProfile = newName
+					   if profileDropdown and profileDropdown.Set then profileDropdown:Set(newName) end
+				   end
+			   end
+		   })
+	   end)
+	   if not okRenameBtn then warn('[Rayfield Debug] createSettings: Failed to create Rename Profile button') end
 
 	-- Settings Sections
-	for categoryName, settingCategory in pairs(settingsTable) do
-		newTab:CreateSection(categoryName)
-		for settingName, setting in pairs(settingCategory) do
-			if setting.Type == 'input' then
-				setting.Element = newTab:CreateInput({
-					Name = setting.Name,
-					CurrentValue = setting.Value,
-					PlaceholderText = setting.Placeholder,
-					Ext = true,
-					RemoveTextAfterFocusLost = setting.ClearOnFocus,
-					Callback = function(Value)
-						updateSetting(categoryName, settingName, Value)
-					end,
-				})
-			elseif setting.Type == 'toggle' then
-				setting.Element = newTab:CreateToggle({
-					Name = setting.Name,
-					CurrentValue = setting.Value,
-					Ext = true,
-					Callback = function(Value)
-						updateSetting(categoryName, settingName, Value)
-					end,
-				})
-			elseif setting.Type == 'bind' then
-				setting.Element = newTab:CreateKeybind({
-					Name = setting.Name,
-					CurrentKeybind = setting.Value,
-					HoldToInteract = false,
-					Ext = true,
-					CallOnChange = true,
-					Callback = function(Value)
-						updateSetting(categoryName, settingName, Value)
-					end,
-				})
-			end
-		end
-	end
 
-	-- Theme selector
-	newTab:CreateSection("Theme")
-	local themeList = {}
-	for themeName, _ in pairs(RayfieldLibrary.Theme) do
-		table.insert(themeList, themeName)
-	end
-	table.sort(themeList)
-	local currentTheme = nil
-	for k,v in pairs(RayfieldLibrary.Theme) do
-		if v == SelectedTheme then currentTheme = k break end
-	end
-	newTab:CreateDropdown({
-		Name = "Select Theme",
-		Options = themeList,
-		CurrentOption = currentTheme or themeList[1],
-		Callback = function(selected)
-			if selected and Rayfield and Rayfield.ModifyTheme then
-				Rayfield.ModifyTheme(selected)
-			elseif Window and Window.ModifyTheme then
-				Window.ModifyTheme(selected)
-			else
-				ChangeTheme(selected)
-			end
-		end
-	})
+	   for categoryName, settingCategory in pairs(settingsTable) do
+		   local okSection = pcall(function()
+			   print("[Rayfield Debug] Creating section for category:", categoryName)
+			   newTab:CreateSection(categoryName)
+		   end)
+		   if not okSection then warn('[Rayfield Debug] createSettings: Failed to create section for category:', categoryName) end
+		   for settingName, setting in pairs(settingCategory) do
+			   local okElement = pcall(function()
+				   print("[Rayfield Debug] Creating element for setting:", settingName, setting.Type)
+				   if setting.Type == 'input' then
+					   setting.Element = newTab:CreateInput({
+						   Name = setting.Name,
+						   CurrentValue = setting.Value,
+						   PlaceholderText = setting.Placeholder,
+						   Ext = true,
+						   RemoveTextAfterFocusLost = setting.ClearOnFocus,
+						   Callback = function(Value)
+							   updateSetting(categoryName, settingName, Value)
+						   end,
+					   })
+				   elseif setting.Type == 'toggle' then
+					   setting.Element = newTab:CreateToggle({
+						   Name = setting.Name,
+						   CurrentValue = setting.Value,
+						   Ext = true,
+						   Callback = function(Value)
+							   updateSetting(categoryName, settingName, Value)
+						   end,
+					   })
+				   elseif setting.Type == 'bind' then
+					   setting.Element = newTab:CreateKeybind({
+						   Name = setting.Name,
+						   CurrentKeybind = setting.Value,
+						   HoldToInteract = false,
+						   Ext = true,
+						   CallOnChange = true,
+						   Callback = function(Value)
+							   updateSetting(categoryName, settingName, Value)
+						   end,
+					   })
+				   end
+			   end)
+			   if not okElement then warn('[Rayfield Debug] createSettings: Failed to create element for setting:', settingName, setting.Type) end
+		   end
+	   end
+
+
+	   -- Theme selector
+	   local okThemeSection = pcall(function()
+		   newTab:CreateSection("Theme")
+	   end)
+	   if not okThemeSection then warn('[Rayfield Debug] createSettings: Failed to create Theme section') end
+
+	   local themeList = {}
+	   for themeName, _ in pairs(RayfieldLibrary.Theme) do
+		   table.insert(themeList, themeName)
+	   end
+	   table.sort(themeList)
+	   local currentTheme = nil
+	   for k,v in pairs(RayfieldLibrary.Theme) do
+		   if v == SelectedTheme then currentTheme = k break end
+	   end
+	   local okThemeDropdown = pcall(function()
+		   newTab:CreateDropdown({
+			   Name = "Select Theme",
+			   Options = themeList,
+			   CurrentOption = currentTheme or themeList[1],
+			   Callback = function(selected)
+				   if selected and Rayfield and Rayfield.ModifyTheme then
+					   Rayfield.ModifyTheme(selected)
+				   elseif Window and Window.ModifyTheme then
+					   Window.ModifyTheme(selected)
+				   else
+					   ChangeTheme(selected)
+				   end
+			   end
+		   })
+	   end)
+	   if not okThemeDropdown then warn('[Rayfield Debug] createSettings: Failed to create Theme dropdown') end
 
 	settingsCreated = true
+	print("[Rayfield Debug] settingsCreated set to true, calling loadSettings()")
 	loadSettings()
 	saveSettings()
 end
