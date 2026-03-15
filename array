@@ -2320,7 +2320,7 @@ function RayfieldLibrary:CreateWindow(Settings)
 		TabButton.Image.ImageTransparency = 1
 		TabButton.UIStroke.Transparency = 1
 
-		TabButton.Visible = not Ext or false
+		TabButton.Visible = true
 
 		-- Create Elements Page
 		local TabPage = Elements.Template:Clone()
