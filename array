@@ -1774,8 +1774,10 @@ local function createSettings(window)
 	end
 
 
-	if Elements['Rayfield Settings'] then
-		Elements['Rayfield Settings'].LayoutOrder = 1000
+	local rayfieldSettingsTab = Elements:FindFirstChild('Rayfield Settings')
+	if rayfieldSettingsTab then
+		rayfieldSettingsTab.LayoutOrder = 1000
+		rayfieldSettingsTab.Visible = true
 	else
 		warn("[Rayfield] 'Rayfield Settings' tab was not created in Elements. Check tab creation logic.")
 	end
@@ -3981,8 +3983,9 @@ if Topbar:FindFirstChild('Settings') then
 				end
 			end
 
-			   if Elements['Rayfield Settings'] then
-				   Elements.UIPageLayout:JumpTo(Elements['Rayfield Settings'])
+			   local rayfieldSettingsTab = Elements:FindFirstChild('Rayfield Settings')
+			   if rayfieldSettingsTab then
+				   Elements.UIPageLayout:JumpTo(rayfieldSettingsTab)
 			   else
 				   warn("[Rayfield] Rayfield Settings tab not found in Elements! Navigation skipped.")
 			   end
