@@ -3940,7 +3940,11 @@ if Topbar:FindFirstChild('Settings') then
 				end
 			end
 
-			Elements.UIPageLayout:JumpTo(Elements['Rayfield Settings'])
+			if Elements['Rayfield Settings'] then
+				Elements.UIPageLayout:JumpTo(Elements['Rayfield Settings'])
+			else
+				warn("Rayfield Settings tab not found in Elements!")
+			end
 		end)
 	end)
 
