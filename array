@@ -1943,7 +1943,6 @@ function RayfieldLibrary:CreateWindow(Settings)
 			Rayfield.Loading.Visible = false
 		end
 	end
-end
 
 	if getgenv then getgenv().rayfieldCached = true end
 
