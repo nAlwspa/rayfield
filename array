@@ -4017,12 +4017,16 @@ if Topbar:FindFirstChild('Settings') then
    Topbar.Settings.MouseButton1Click:Connect(function()
 	   task.spawn(function()
 		   -- Only create the settings tab if it hasn't been created yet
-		   if not Window._settingsTabCreated then
-			   local success, result = pcall(function()
-				   createSettings(Window)
-			   end)
-			   if not success then warn('Rayfield had an issue creating settings.') end
-			   Window._settingsTabCreated = true
+		   if Window and type(Window) == "table" then
+			   if not Window._settingsTabCreated then
+				   local success, result = pcall(function()
+					   createSettings(Window)
+				   end)
+				   if not success then warn('Rayfield had an issue creating settings.') end
+				   Window._settingsTabCreated = true
+			   end
+		   else
+			   warn('[Rayfield Debug] Window is nil or not a table, cannot create settings tab.')
 		   end
 		   for _, OtherTabButton in ipairs(TabList:GetChildren()) do
 			   if OtherTabButton.Name ~= "Template" and OtherTabButton.ClassName == "Frame" and OtherTabButton ~= TabButton and OtherTabButton.Name ~= "Placeholder" then
