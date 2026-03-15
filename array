@@ -75,6 +75,79 @@ local InterfaceBuild = '3K3W'
 local Release = "Build 1.68"
 local RayfieldFolder = "Rayfield"
 local ConfigurationFolder = RayfieldFolder.."/Configurations"
+
+--[[
+  PROFILE MANAGEMENT
+  Save, Load, Overwrite, Delete, Select, Rename Profile
+]]
+local ProfileFolder = RayfieldFolder.."/Profiles"
+
+local function ensureProfileFolder()
+	if not callSafely(isfolder, ProfileFolder) then
+		callSafely(makefolder, ProfileFolder)
+	end
+end
+
+local function ListProfiles()
+	ensureProfileFolder()
+	local profiles = {}
+	if listfiles then
+		for _, file in ipairs(listfiles(ProfileFolder)) do
+			local name = file:match("([^/\\]+)"..ConfigurationExtension.."$")
+			if name then table.insert(profiles, name) end
+		end
+	end
+	return profiles
+end
+
+local function SaveProfile(profileName)
+	ensureProfileFolder()
+	local Data = {}
+	for i, v in pairs(RayfieldLibrary.Flags) do
+		if v.Type == "ColorPicker" then
+			Data[i] = PackColor(v.Color)
+		else
+			if typeof(v.CurrentValue) == 'boolean' then
+				if v.CurrentValue == false then
+					Data[i] = false
+				else
+					Data[i] = v.CurrentValue or v.CurrentKeybind or v.CurrentOption or v.Color
+				end
+			else
+				Data[i] = v.CurrentValue or v.CurrentKeybind or v.CurrentOption or v.Color
+			end
+		end
+	end
+	callSafely(writefile, ProfileFolder.."/"..profileName..ConfigurationExtension, HttpService:JSONEncode(Data))
+end
+
+local function LoadProfile(profileName)
+	ensureProfileFolder()
+	if callSafely(isfile, ProfileFolder.."/"..profileName..ConfigurationExtension) then
+		local file = callSafely(readfile, ProfileFolder.."/"..profileName..ConfigurationExtension)
+		LoadConfiguration(file)
+	end
+end
+
+local function DeleteProfile(profileName)
+	ensureProfileFolder()
+	if delfile and callSafely(isfile, ProfileFolder.."/"..profileName..ConfigurationExtension) then
+		delfile(ProfileFolder.."/"..profileName..ConfigurationExtension)
+	end
+end
+
+local function RenameProfile(oldName, newName)
+	ensureProfileFolder()
+	local oldPath = ProfileFolder.."/"..oldName..ConfigurationExtension
+	local newPath = ProfileFolder.."/"..newName..ConfigurationExtension
+	if callSafely(isfile, oldPath) and not callSafely(isfile, newPath) then
+		if writefile and readfile and delfile then
+			local data = callSafely(readfile, oldPath)
+			callSafely(writefile, newPath, data)
+			delfile(oldPath)
+		end
+	end
+end
 local ConfigurationExtension = ".rfld"
 local settingsTable = {
 	General = {
@@ -1540,6 +1613,7 @@ local function updateSetting(category: string, setting: string, value: any)
 	saveSettings()
 end
 
+
 local function createSettings(window)
 	if not (writefile and isfile and readfile and isfolder and makefolder) and not useStudio then
 		if Topbar['Settings'] then Topbar.Settings.Visible = false end
@@ -1547,6 +1621,80 @@ local function createSettings(window)
 		warn('Can\'t create settings as no file-saving functionality is available.')
 		return
 	end
+
+	-- Profile Management UI
+	local profileTab = window:CreateTab('Profiles', 0, true)
+	profileTab:CreateSection("Profile Management")
+	local profiles = ListProfiles()
+	local currentProfile = profiles[1] or "default"
+	local profileDropdown
+	local profileInput
+
+	profileDropdown = profileTab:CreateDropdown({
+		Name = "Select Profile",
+		Options = profiles,
+		CurrentOption = currentProfile,
+		Callback = function(selected)
+			currentProfile = selected
+		end
+	})
+
+	profileInput = profileTab:CreateInput({
+		Name = "Profile Name",
+		CurrentValue = currentProfile,
+		PlaceholderText = "Enter profile name...",
+		Callback = function(val)
+			currentProfile = val
+		end
+	})
+
+	profileTab:CreateButton({
+		Name = "Save Profile",
+		Callback = function()
+			SaveProfile(currentProfile)
+			RayfieldLibrary:Notify({Title = "Profile Saved", Content = "Profile '"..currentProfile.."' saved."})
+			profileDropdown:Set(ListProfiles())
+		end
+	})
+
+	profileTab:CreateButton({
+		Name = "Load Profile",
+		Callback = function()
+			LoadProfile(currentProfile)
+			RayfieldLibrary:Notify({Title = "Profile Loaded", Content = "Profile '"..currentProfile.."' loaded."})
+		end
+	})
+
+	profileTab:CreateButton({
+		Name = "Overwrite Profile",
+		Callback = function()
+			SaveProfile(currentProfile)
+			RayfieldLibrary:Notify({Title = "Profile Overwritten", Content = "Profile '"..currentProfile.."' overwritten."})
+		end
+	})
+
+	profileTab:CreateButton({
+		Name = "Delete Profile",
+		Callback = function()
+			DeleteProfile(currentProfile)
+			RayfieldLibrary:Notify({Title = "Profile Deleted", Content = "Profile '"..currentProfile.."' deleted."})
+			profileDropdown:Set(ListProfiles())
+		end
+	})
+
+	profileTab:CreateButton({
+		Name = "Rename Profile",
+		Callback = function()
+			local newName = profileInput:Get()
+			if newName and newName ~= currentProfile then
+				RenameProfile(currentProfile, newName)
+				RayfieldLibrary:Notify({Title = "Profile Renamed", Content = "Profile renamed to '"..newName.."'."})
+				profileDropdown:Set(ListProfiles())
+				currentProfile = newName
+				profileDropdown:Set(newName)
+			end
+		end
+	})
 
 	local newTab = window:CreateTab('Rayfield Settings', 0, true)
 
@@ -1558,7 +1706,9 @@ local function createSettings(window)
 		Elements['Rayfield Settings'].LayoutOrder = 1000
 	end
 
+
 	-- Create sections and elements
+	local toggleKeybinds = {}
 	for categoryName, settingCategory in pairs(settingsTable) do
 		newTab:CreateSection(categoryName)
 
@@ -1583,6 +1733,32 @@ local function createSettings(window)
 						updateSetting(categoryName, settingName, Value)
 					end,
 				})
+				-- Tambahkan keybind untuk toggle ini
+				local keybindName = setting.Name .. " Toggle Keybind"
+				toggleKeybinds[#toggleKeybinds+1] = {
+					setting = setting,
+					keybind = newTab:CreateKeybind({
+						Name = keybindName,
+						CurrentKeybind = "",
+						HoldToInteract = false,
+						Ext = true,
+						CallOnChange = true,
+						Callback = function(Key)
+							if Key and Key ~= "" then
+								-- Daftarkan listener key
+								if setting._keybindConn then setting._keybindConn:Disconnect() end
+								setting._keybindConn = game:GetService("UserInputService").InputBegan:Connect(function(input, processed)
+									if not processed and input.KeyCode and tostring(input.KeyCode) == Key then
+										setting.Element:Set(not setting.Element.CurrentValue)
+									end
+								end)
+							elseif setting._keybindConn then
+								setting._keybindConn:Disconnect()
+								setting._keybindConn = nil
+							end
+						end,
+					})
+				}
 			elseif setting.Type == 'bind' then
 				setting.Element = newTab:CreateKeybind({
 					Name = setting.Name,
@@ -1597,6 +1773,32 @@ local function createSettings(window)
 			end
 		end
 	end
+
+	-- Tambahkan pengaturan tema (theme selector)
+	newTab:CreateSection("Theme")
+	local themeList = {}
+	for themeName, _ in pairs(RayfieldLibrary.Theme) do
+		table.insert(themeList, themeName)
+	end
+	table.sort(themeList)
+	local currentTheme = nil
+	for k,v in pairs(RayfieldLibrary.Theme) do
+		if v == SelectedTheme then currentTheme = k break end
+	end
+	newTab:CreateDropdown({
+		Name = "Select Theme",
+		Options = themeList,
+		CurrentOption = currentTheme or themeList[1],
+		Callback = function(selected)
+			if selected and Rayfield and Rayfield.ModifyTheme then
+				Rayfield.ModifyTheme(selected)
+			elseif Window and Window.ModifyTheme then
+				Window.ModifyTheme(selected)
+			else
+				ChangeTheme(selected)
+			end
+		end
+	})
 
 	settingsCreated = true
 	loadSettings()
@@ -2583,10 +2785,12 @@ function RayfieldLibrary:CreateWindow(Settings)
 				end
 			end
 
-			Rayfield.Main:GetPropertyChangedSignal('BackgroundColor3'):Connect(function()
-				Label.BackgroundColor3 = IgnoreTheme and (Color or Label.BackgroundColor3) or SelectedTheme.SecondaryElementBackground
-				Label.UIStroke.Color = IgnoreTheme and (Color or Label.BackgroundColor3) or SelectedTheme.SecondaryElementStroke
-			end)
+			   Rayfield.Main:GetPropertyChangedSignal('BackgroundColor3'):Connect(function()
+				   if not IgnoreTheme then
+					   Label.BackgroundColor3 = SelectedTheme.SecondaryElementBackground
+					   Label.UIStroke.Color = SelectedTheme.SecondaryElementStroke
+				   end
+			   end)
 
 			return LabelValue
 		end
