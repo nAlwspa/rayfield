@@ -817,17 +817,30 @@ local function ChangeTheme(Theme)
 		Main.Notice.BackgroundColor3 = SelectedTheme.Background
 	end
 
-	for _, text in ipairs(Rayfield:GetDescendants()) do
-		if text.Parent.Parent ~= Notifications then
-			if text:IsA('TextLabel') or text:IsA('TextBox') then text.TextColor3 = SelectedTheme.TextColor end
+
+		for _, text in ipairs(Rayfield:GetDescendants()) do
+			if text.Parent.Parent ~= Notifications then
+				if text:IsA('TextLabel') or text:IsA('TextBox') then
+					text.TextColor3 = SelectedTheme.TextColor
+					-- Ensure text color is set after any background color change
+					if text.Parent and text.Parent:IsA('Frame') and text.Parent.BackgroundColor3 then
+						text.TextColor3 = SelectedTheme.TextColor
+					end
+				end
+			end
 		end
-	end
 
 	for _, TabPage in ipairs(Elements:GetChildren()) do
 		for _, Element in ipairs(TabPage:GetChildren()) do
 			if Element.ClassName == "Frame" and Element.Name ~= "Placeholder" and Element.Name ~= "SectionSpacing" and Element.Name ~= "Divider" and Element.Name ~= "SectionTitle" and Element.Name ~= "SearchTitle-fsefsefesfsefesfesfThanks" then
 				Element.BackgroundColor3 = SelectedTheme.ElementBackground
 				Element.UIStroke.Color = SelectedTheme.ElementStroke
+				-- Patch: Ensure all TextLabel/TextBox children have correct text color after background change
+				for _, child in ipairs(Element:GetChildren()) do
+					if child:IsA('TextLabel') or child:IsA('TextBox') then
+						child.TextColor3 = SelectedTheme.TextColor
+					end
+				end
 			end
 		end
 	end
@@ -4017,10 +4030,6 @@ task.delay(4, function()
 		Main.Notice.Visible = false
 	end
 end)
-
--- ====== RAYFIELD SAFE INITIALIZATION SYSTEM ======
--- This system handles UI element setter operations that may occur before elements are created
--- Allows functions like applySafeSettings() to safely call :Set() on toggles, buttons, sliders, etc.
 
 local SafeInitSystem = {
 	Elements = {},
