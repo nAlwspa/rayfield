@@ -11,8 +11,27 @@
 
 ]]
 
-if debugX then
-	warn('Initialising Rayfield')
+
+-- Global debug mode variable for Rayfield
+getgenv = getgenv or function() return _G end
+local RayfieldDebug = getgenv().RayfieldDebug
+if RayfieldDebug == nil then
+	RayfieldDebug = false
+	getgenv().RayfieldDebug = RayfieldDebug
+end
+
+local function SetRayfieldDebugMode(on)
+	RayfieldDebug = on and true or false
+	getgenv().RayfieldDebug = RayfieldDebug
+	if RayfieldDebug then
+		warn('[Rayfield Debug] Debug mode enabled')
+	else
+		warn('[Rayfield Debug] Debug mode disabled')
+	end
+end
+
+if RayfieldDebug then
+	warn('Initialising Rayfield (Debug Mode ON)')
 end
 
 local function getService(name)
@@ -205,11 +224,23 @@ end
 
 -- The function below provides a safe alternative for calling error-prone functions
 -- Especially useful for filesystem function (writefile, makefolder, etc.)
+
+local function RayfieldLogError(msg, err)
+	if RayfieldDebug then
+		warn('[Rayfield Debug] '..tostring(msg), err)
+		if writefile then
+			local logPath = RayfieldFolder.."/debug_log_"..os.date("!%Y%m%d_%H%M%S")..".txt"
+			local logMsg = os.date("!%Y-%m-%d %H:%M:%S").." | "..tostring(msg).."\n"..tostring(err or "")
+			pcall(function() writefile(logPath, logMsg) end)
+		end
+	end
+end
+
 local function callSafely(func, ...)
 	if func then
 		local success, result = pcall(func, ...)
 		if not success then
-			warn("Rayfield | Function failed with error: ", result)
+			RayfieldLogError("Function failed with error:", result)
 			return false
 		else
 			return result
@@ -224,10 +255,10 @@ local function ensureFolder(folderPath)
 	end
 end
 
+
 local function loadSettings()
 	local file = nil
-
-	local success, result =	pcall(function()
+	local success, result = pcall(function()
 		task.spawn(function()
 			if callSafely(isfolder, RayfieldFolder) then
 				if callSafely(isfile, RayfieldFolder..'/settings'..ConfigurationExtension) then
@@ -247,12 +278,12 @@ local function loadSettings()
 				if success then
 					file = decodedFile
 				else
+					RayfieldLogError("Failed to decode settings JSON", decodedFile)
 					file = {}
 				end
 			else
 				file = {}
 			end
-
 
 			if not settingsCreated then 
 				cachedSettings = file
@@ -287,19 +318,21 @@ local function loadSettings()
 	end)
 
 	if not success then 
+		RayfieldLogError('Rayfield had an issue accessing configuration saving capability.', result)
 		if writefile then
 			warn('Rayfield had an issue accessing configuration saving capability.')
 		end
 	end
 end
 
-if debugX then
+
+if RayfieldDebug then
 	warn('Now Loading Settings Configuration')
 end
 
 loadSettings()
 
-if debugX then
+if RayfieldDebug then
 	warn('Settings Loaded')
 end
 
