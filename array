@@ -1850,6 +1850,22 @@ local function createSettings(window)
 							   updateSetting(categoryName, settingName, Value)
 						   end,
 					   })
+					   -- Add a keybind for this toggle
+					   local keybindFlag = 'Keybind_'..categoryName..'_'..settingName
+					   newTab:CreateKeybind({
+						   Name = setting.Name..' Keybind',
+						   CurrentKeybind = 'None',
+						   HoldToInteract = false,
+						   Ext = true,
+						   CallOnChange = true,
+						   Flag = keybindFlag,
+						   Callback = function(key)
+							   -- When the keybind is pressed, toggle the setting
+							   if setting.Element and typeof(setting.Element.Set) == 'function' then
+								   setting.Element:Set(not setting.Element.Value)
+							   end
+						   end,
+					   })
 				   elseif setting.Type == 'bind' then
 					   setting.Element = newTab:CreateKeybind({
 						   Name = setting.Name,
@@ -1889,12 +1905,15 @@ local function createSettings(window)
 			   Options = themeList,
 			   CurrentOption = currentTheme or themeList[1],
 			   Callback = function(selected)
-				   if selected and Rayfield and Rayfield.ModifyTheme then
-					   Rayfield.ModifyTheme(selected)
-				   elseif Window and Window.ModifyTheme then
-					   Window.ModifyTheme(selected)
-				   else
-					   ChangeTheme(selected)
+				   -- Only call ModifyTheme if it's a function on Window or Rayfield (not a ScreenGui)
+				   if selected then
+					   if Window and typeof(Window.ModifyTheme) == "function" then
+						   Window.ModifyTheme(selected)
+					   elseif Rayfield and typeof(Rayfield.ModifyTheme) == "function" then
+						   Rayfield.ModifyTheme(selected)
+					   else
+						   ChangeTheme(selected)
+					   end
 				   end
 			   end
 		   })
@@ -3891,11 +3910,9 @@ function RayfieldLibrary:CreateWindow(Settings)
 		end
 	end
 
-	local success, result = pcall(function()
-		createSettings(Window)
-	end)
 
-	if not success then warn('Rayfield had an issue creating settings.') end
+	   -- Remove unconditional settings tab creation. It will be created on demand by the Settings button.
+	   Window._settingsTabCreated = false
 
 	return Window
 end
@@ -3994,29 +4011,38 @@ Topbar.Search.MouseButton1Click:Connect(function()
 	end)
 end)
 
+
 if Topbar:FindFirstChild('Settings') then
-	Topbar.Settings.Visible = true -- Always visible
-	Topbar.Settings.MouseButton1Click:Connect(function()
-		task.spawn(function()
-			for _, OtherTabButton in ipairs(TabList:GetChildren()) do
-				if OtherTabButton.Name ~= "Template" and OtherTabButton.ClassName == "Frame" and OtherTabButton ~= TabButton and OtherTabButton.Name ~= "Placeholder" then
-					TweenService:Create(OtherTabButton, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.TabBackground}):Play()
-					TweenService:Create(OtherTabButton.Title, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {TextColor3 = SelectedTheme.TabTextColor}):Play()
-					TweenService:Create(OtherTabButton.Image, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {ImageColor3 = SelectedTheme.TabTextColor}):Play()
-					TweenService:Create(OtherTabButton, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0.7}):Play()
-					TweenService:Create(OtherTabButton.Title, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {TextTransparency = 0.2}):Play()
-					TweenService:Create(OtherTabButton.Image, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {ImageTransparency = 0.2}):Play()
-					TweenService:Create(OtherTabButton.UIStroke, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {Transparency = 0.5}):Play()
-				end
-			end
-			local rayfieldSettingsTab = Elements:FindFirstChild('Rayfield Settings')
-			if rayfieldSettingsTab then
-				Elements.UIPageLayout:JumpTo(rayfieldSettingsTab)
-			else
-				warn("[Rayfield] Rayfield Settings tab not found in Elements! Navigation skipped.")
-			end
-		end)
-	end)
+   Topbar.Settings.Visible = true -- Always visible
+   Topbar.Settings.MouseButton1Click:Connect(function()
+	   task.spawn(function()
+		   -- Only create the settings tab if it hasn't been created yet
+		   if not Window._settingsTabCreated then
+			   local success, result = pcall(function()
+				   createSettings(Window)
+			   end)
+			   if not success then warn('Rayfield had an issue creating settings.') end
+			   Window._settingsTabCreated = true
+		   end
+		   for _, OtherTabButton in ipairs(TabList:GetChildren()) do
+			   if OtherTabButton.Name ~= "Template" and OtherTabButton.ClassName == "Frame" and OtherTabButton ~= TabButton and OtherTabButton.Name ~= "Placeholder" then
+				   TweenService:Create(OtherTabButton, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.TabBackground}):Play()
+				   TweenService:Create(OtherTabButton.Title, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {TextColor3 = SelectedTheme.TabTextColor}):Play()
+				   TweenService:Create(OtherTabButton.Image, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {ImageColor3 = SelectedTheme.TabTextColor}):Play()
+				   TweenService:Create(OtherTabButton, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0.7}):Play()
+				   TweenService:Create(OtherTabButton.Title, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {TextTransparency = 0.2}):Play()
+				   TweenService:Create(OtherTabButton.Image, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {ImageTransparency = 0.2}):Play()
+				   TweenService:Create(OtherTabButton.UIStroke, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {Transparency = 0.5}):Play()
+			   end
+		   end
+		   local rayfieldSettingsTab = Elements:FindFirstChild('Rayfield Settings')
+		   if rayfieldSettingsTab then
+			   Elements.UIPageLayout:JumpTo(rayfieldSettingsTab)
+		   else
+			   warn("[Rayfield] Rayfield Settings tab not found in Elements! Navigation skipped.")
+		   end
+	   end)
+   end)
 end
 
 
