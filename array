@@ -954,6 +954,29 @@ local function ChangeTheme(Theme)
 			end
 		end
 	end
+
+	-- memastikan tab terwarnai dengan benar setelah perubahan tema
+	for _, tabbtn in ipairs(TabList:GetChildren()) do
+		if tabbtn.ClassName == 'Frame' and tabbtn.Name ~= 'Placeholder' then
+			if Elements.UIPageLayout.CurrentPage and tostring(Elements.UIPageLayout.CurrentPage) == tabbtn.Title.Text then
+				tabbtn.BackgroundColor3 = SelectedTheme.TabBackgroundSelected
+				tabbtn.BackgroundTransparency = 0
+				tabbtn.Title.TextColor3 = SelectedTheme.SelectedTabTextColor
+				tabbtn.Image.ImageColor3 = SelectedTheme.SelectedTabTextColor
+				if tabbtn:FindFirstChild('UIStroke') then
+					tabbtn.UIStroke.Transparency = 1
+				end
+			else
+				tabbtn.BackgroundColor3 = SelectedTheme.TabBackground
+				tabbtn.BackgroundTransparency = 0.7
+				tabbtn.Title.TextColor3 = SelectedTheme.TabTextColor
+				tabbtn.Image.ImageColor3 = SelectedTheme.TabTextColor
+				if tabbtn:FindFirstChild('UIStroke') then
+					tabbtn.UIStroke.Transparency = 0.5
+				end
+			end
+		end
+	end
 end
 
 local function getIcon(name : string): {id: number, imageRectSize: Vector2, imageRectOffset: Vector2}
@@ -1339,6 +1362,21 @@ local function closeSearch()
 				   if tabbtn:FindFirstChild('UIStroke') then
 					   TweenService:Create(tabbtn.UIStroke, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {Transparency = 0.5}):Play()
 				   end
+			end
+		end
+	end
+
+	-- Force reapply background colors to prevent tab fade-out "hilang"
+	for _, tabbtn in ipairs(TabList:GetChildren()) do
+		if tabbtn.ClassName == 'Frame' and tabbtn.Name ~= 'Placeholder' then
+			if tostring(Elements.UIPageLayout.CurrentPage) == tabbtn.Title.Text then
+				tabbtn.BackgroundColor3 = SelectedTheme.TabBackgroundSelected
+				tabbtn.Title.TextColor3 = SelectedTheme.SelectedTabTextColor
+				tabbtn.Image.ImageColor3 = SelectedTheme.SelectedTabTextColor
+			else
+				tabbtn.BackgroundColor3 = SelectedTheme.TabBackground
+				tabbtn.Title.TextColor3 = SelectedTheme.TabTextColor
+				tabbtn.Image.ImageColor3 = SelectedTheme.TabTextColor
 			end
 		end
 	end
@@ -3941,6 +3979,11 @@ Topbar.ChangeSize.MouseButton1Click:Connect(function()
 		Minimised = true
 		Minimise()
 	end
+end)
+
+Topbar.Hide.MouseButton1Click:Connect(function()
+	if Debounce then return end
+	Hide(true) -- tutup/hidden Rayfield dengan notifikasi
 end)
 
 Main.Search.Input:GetPropertyChangedSignal('Text'):Connect(function()
