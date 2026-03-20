@@ -1,4 +1,3 @@
--- sourch code https://raw.githubusercontent.com/SiriusSoftwareLtd/Rayfield/main/source.lua 
 --[[
 
 	Rayfield Interface Suite
@@ -8,36 +7,11 @@
 	iRay   | Programming
 	Max    | Programming
 	Damian | Programming
-	
-	PENTING: Jika loading script ini dari GitHub raw link:
-	- Pastikan timeout network cukup (minimal 3-5 detik)
-	- Script akan mencoba load dependency dari GitHub (prompt.lua, icons.lua, dll)
-	- Jika dependency gagal load, akan menggunakan fallback no-op
-	- Tidak akan error "attempt to call a nil value" lagi (error handling fixed)
 
 ]]
 
-
--- Global debug mode variable for Rayfield
-getgenv = getgenv or function() return _G end
-local RayfieldDebug = getgenv().RayfieldDebug
-if RayfieldDebug == nil then
-	RayfieldDebug = false
-	getgenv().RayfieldDebug = RayfieldDebug
-end
-
-local function SetRayfieldDebugMode(on)
-	RayfieldDebug = on and true or false
-	getgenv().RayfieldDebug = RayfieldDebug
-	if RayfieldDebug then
-		warn('[Rayfield Debug] Debug mode enabled')
-	else
-		warn('[Rayfield Debug] Debug mode disabled')
-	end
-end
-
-if RayfieldDebug then
-	warn('Initialising Rayfield (Debug Mode ON)')
+if debugX then
+	warn('Initialising Rayfield')
 end
 
 local function getService(name)
@@ -52,25 +26,18 @@ local function loadWithTimeout(url: string, timeout: number?): ...any
 	timeout = timeout or 5
 	local requestCompleted = false
 	local success, result = false, nil
-	local timedOut = false
 
 	local requestThread = task.spawn(function()
-		if timedOut then return end -- Check if already timed out
-		
 		local fetchSuccess, fetchResult = pcall(game.HttpGet, game, url) -- game:HttpGet(url)
-		if timedOut then return end -- Check again after fetch
-		
 		-- If the request fails the content can be empty, even if fetchSuccess is true
-		if not fetchSuccess or (fetchResult and #fetchResult == 0) then
-			local errMsg = fetchResult or "Empty response"
-			if RayfieldDebug then
-				warn("[Rayfield Debug] Fetch failed for " .. url .. ": " .. tostring(errMsg))
+		if not fetchSuccess or #fetchResult == 0 then
+			if #fetchResult == 0 then
+				fetchResult = "Empty response" -- Set the error message
 			end
-			success, result = false, errMsg
+			success, result = false, fetchResult
 			requestCompleted = true
 			return
 		end
-		
 		local content = fetchResult -- Fetched content
 		local execSuccess, execResult = pcall(function()
 			return loadstring(content)()
@@ -79,29 +46,27 @@ local function loadWithTimeout(url: string, timeout: number?): ...any
 		requestCompleted = true
 	end)
 
-	-- Timeout handling
-	local startTime = tick()
-	while not requestCompleted and (tick() - startTime) < timeout do
-		task.wait(0.1)
-	end
-	
-	if not requestCompleted then
-		timedOut = true
-		task.cancel(requestThread)
-		if RayfieldDebug then
-			warn("[Rayfield Debug] Request for " .. url .. " timed out after " .. tostring(timeout) .. " seconds")
+	local timeoutThread = task.delay(timeout, function()
+		if not requestCompleted then
+			warn("Request for " .. url .. " timed out after " .. tostring(timeout) .. " seconds")
+			task.cancel(requestThread)
+			result = "Request timed out"
+			requestCompleted = true
 		end
-		return nil
+	end)
+
+	-- Wait for completion or timeout
+	while not requestCompleted do
+		task.wait()
 	end
-	
+	-- Cancel timeout thread if still running when request completes
+	if coroutine.status(timeoutThread) ~= "dead" then
+		task.cancel(timeoutThread)
+	end
 	if not success then
-		if RayfieldDebug then
-			warn("[Rayfield Debug] Failed to process " .. tostring(url) .. ": " .. tostring(result))
-		end
-		return nil
+		warn("Failed to process " .. tostring(url) .. ": " .. tostring(result))
 	end
-	
-	return result
+	return if success then result else nil
 end
 
 local requestsDisabled = true --getgenv and getgenv().DISABLE_RAYFIELD_REQUESTS
@@ -109,6 +74,7 @@ local InterfaceBuild = '3K3W'
 local Release = "Build 1.68"
 local RayfieldFolder = "Rayfield"
 local ConfigurationFolder = RayfieldFolder.."/Configurations"
+local ConfigurationExtension = ".rfld"
 
 --[[
   PROFILE MANAGEMENT
@@ -156,33 +122,33 @@ local function SaveProfile(profileName)
 end
 
 local function LoadProfile(profileName)
-	ensureProfileFolder()
-	if callSafely(isfile, ProfileFolder.."/"..profileName..ConfigurationExtension) then
-		local file = callSafely(readfile, ProfileFolder.."/"..profileName..ConfigurationExtension)
-		LoadConfiguration(file)
+	local file = callSafely(readfile, ProfileFolder.."/"..profileName..ConfigurationExtension)
+	if file then
+		local Data = HttpService:JSONDecode(file)
+		for i, v in pairs(Data) do
+			if RayfieldLibrary.Flags[i] then
+				if RayfieldLibrary.Flags[i].Type == "ColorPicker" then
+					RayfieldLibrary.Flags[i]:Set(UnpackColor(v))
+				else
+					RayfieldLibrary.Flags[i]:Set(v)
+				end
+			end
+		end
 	end
 end
 
 local function DeleteProfile(profileName)
-	ensureProfileFolder()
-	if delfile and callSafely(isfile, ProfileFolder.."/"..profileName..ConfigurationExtension) then
-		delfile(ProfileFolder.."/"..profileName..ConfigurationExtension)
-	end
+	callSafely(delfile, ProfileFolder.."/"..profileName..ConfigurationExtension)
 end
 
 local function RenameProfile(oldName, newName)
-	ensureProfileFolder()
-	local oldPath = ProfileFolder.."/"..oldName..ConfigurationExtension
-	local newPath = ProfileFolder.."/"..newName..ConfigurationExtension
-	if callSafely(isfile, oldPath) and not callSafely(isfile, newPath) then
-		if writefile and readfile and delfile then
-			local data = callSafely(readfile, oldPath)
-			callSafely(writefile, newPath, data)
-			delfile(oldPath)
-		end
+	local file = callSafely(readfile, ProfileFolder.."/"..oldName..ConfigurationExtension)
+	if file then
+		callSafely(writefile, ProfileFolder.."/"..newName..ConfigurationExtension, file)
+		callSafely(delfile, ProfileFolder.."/"..oldName..ConfigurationExtension)
 	end
 end
-local ConfigurationExtension = ".rfld"
+
 local settingsTable = {
 	General = {
 		-- if needs be in order just make getSetting(name)
@@ -244,23 +210,11 @@ end
 
 -- The function below provides a safe alternative for calling error-prone functions
 -- Especially useful for filesystem function (writefile, makefolder, etc.)
-
-local function RayfieldLogError(msg, err)
-	if RayfieldDebug then
-		warn('[Rayfield Debug] '..tostring(msg), err)
-		if writefile then
-			local logPath = RayfieldFolder.."/debug_log_"..os.date("!%Y%m%d_%H%M%S")..".txt"
-			local logMsg = os.date("!%Y-%m-%d %H:%M:%S").." | "..tostring(msg).."\n"..tostring(err or "")
-			pcall(function() writefile(logPath, logMsg) end)
-		end
-	end
-end
-
 local function callSafely(func, ...)
 	if func then
 		local success, result = pcall(func, ...)
 		if not success then
-			RayfieldLogError("Function failed with error:", result)
+			warn("Rayfield | Function failed with error: ", result)
 			return false
 		else
 			return result
@@ -275,10 +229,10 @@ local function ensureFolder(folderPath)
 	end
 end
 
-
 local function loadSettings()
 	local file = nil
-	local success, result = pcall(function()
+
+	local success, result =	pcall(function()
 		task.spawn(function()
 			if callSafely(isfolder, RayfieldFolder) then
 				if callSafely(isfile, RayfieldFolder..'/settings'..ConfigurationExtension) then
@@ -298,12 +252,12 @@ local function loadSettings()
 				if success then
 					file = decodedFile
 				else
-					RayfieldLogError("Failed to decode settings JSON", decodedFile)
 					file = {}
 				end
 			else
 				file = {}
 			end
+
 
 			if not settingsCreated then 
 				cachedSettings = file
@@ -338,21 +292,19 @@ local function loadSettings()
 	end)
 
 	if not success then 
-		RayfieldLogError('Rayfield had an issue accessing configuration saving capability.', result)
 		if writefile then
 			warn('Rayfield had an issue accessing configuration saving capability.')
 		end
 	end
 end
 
-
-if RayfieldDebug then
+if debugX then
 	warn('Now Loading Settings Configuration')
 end
 
 loadSettings()
 
-if RayfieldDebug then
+if debugX then
 	warn('Settings Loaded')
 end
 
@@ -360,11 +312,11 @@ local analyticsLib
 local sendReport = function(ev_n, sc_n) warn("Failed to load report function") end
 if not requestsDisabled then
 	if debugX then
-		warn('[Rayfield] Querying Settings for Reporter Information')
+		warn('Querying Settings for Reporter Information')
 	end	
-	analyticsLib = loadWithTimeout("https://analytics.sirius.menu/script", 3)
+	analyticsLib = loadWithTimeout("https://analytics.sirius.menu/script")
 	if not analyticsLib then
-		warn("[Rayfield] Failed to load analytics reporter, continuing without analytics")
+		warn("Failed to load analytics reporter")
 		analyticsLib = nil
 	elseif analyticsLib and type(analyticsLib.load) == "function" then
 		analyticsLib:load()
@@ -422,6 +374,7 @@ end
 
 local RayfieldLibrary = {
 	Flags = {},
+	TabToggleKeybinds = {},
 	Theme = {
 		Default = {
 			TextColor = Color3.fromRGB(240, 240, 240),
@@ -808,19 +761,10 @@ local UserInputService = getService("UserInputService")
 local TweenService = getService("TweenService")
 local Players = getService("Players")
 local CoreGui = getService("CoreGui")
-if not CoreGui then
-	warn("[Rayfield] CoreGui service not available, aborting interface creation")
-	return
-end
 
 -- Interface Management
 
-local Rayfield = useStudio and script.Parent:FindFirstChild('Rayfield') or (game:GetObjects("rbxassetid://10804731440")[1] or nil)
-if not Rayfield then
-	warn("[Rayfield] Failed to load Rayfield interface object from assetid")
-	return
-end
-
+local Rayfield = useStudio and script.Parent:FindFirstChild('Rayfield') or game:GetObjects("rbxassetid://10804731440")[1]
 local buildAttempts = 0
 local correctBuild = false
 local warned
@@ -884,7 +828,7 @@ if Rayfield.AbsoluteSize.X < minSize.X and Rayfield.AbsoluteSize.Y < minSize.Y t
 	useMobileSizing = true
 end
 
-if UserInputService.TouchEnabled or (UserInputService:GetPlatform() == Enum.Platform.Android) then
+if UserInputService.TouchEnabled then
 	useMobilePrompt = true
 end
 
@@ -898,8 +842,6 @@ local Elements = Main.Elements
 local LoadingFrame = Main.LoadingFrame
 local TabList = Main.TabList
 local dragBar = Rayfield:FindFirstChild('Drag')
-
-local RayfieldWindow = nil
 local dragInteract = dragBar and dragBar.Interact or nil
 local dragBarCosmetic = dragBar and dragBar.Drag or nil
 
@@ -910,13 +852,8 @@ Rayfield.DisplayOrder = 100
 LoadingFrame.Version.Text = Release
 
 -- Thanks to Latte Softworks for the Lucide integration for Roblox
-local Icons = useStudio and require(script.Parent.icons) or loadWithTimeout('https://raw.githubusercontent.com/SiriusSoftwareLtd/Rayfield/refs/heads/main/icons.lua', 3)
-
--- Safe fallback for Icons
-if not Icons then
-	warn("[Rayfield] Failed to load Icons library, Lucide icons will be disabled")
-	Icons = {['48px'] = {}} -- Empty fallback
-end
+local Icons = useStudio and require(script.Parent.icons) or loadWithTimeout('https://raw.githubusercontent.com/SiriusSoftwareLtd/Rayfield/refs/heads/main/icons.lua')
+-- Variables
 
 local CFileName = nil
 local CEnabled = false
@@ -926,19 +863,6 @@ local Debounce = false
 local searchOpen = false
 local Notifications = Rayfield.Notifications
 local keybindConnections = {} -- For storing keybind connections to disconnect when Rayfield is destroyed
-
--- global keybind mapping for toggle controls in non-settings tabs
-RayfieldLibrary.TabToggleKeybinds = {}
-function RayfieldLibrary:RegisterToggleKeybind(TabName, ToggleName, ToggleSettings)
-	local key = TabName.." - "..ToggleName
-	self.TabToggleKeybinds[key] = {
-		TabName = TabName,
-		ToggleName = ToggleName,
-		ToggleSettings = ToggleSettings,
-		Keybind = "None",
-	}
-	return self.TabToggleKeybinds[key]
-end
 
 local SelectedTheme = RayfieldLibrary.Theme.Default
 
@@ -966,92 +890,23 @@ local function ChangeTheme(Theme)
 	Main.Search.Shadow.ImageColor3 = SelectedTheme.TextColor
 	Main.Search.Search.ImageColor3 = SelectedTheme.TextColor
 	Main.Search.Input.PlaceholderColor3 = SelectedTheme.TextColor
-	if Main.Search:FindFirstChild('UIStroke') then
-		Main.Search.UIStroke.Color = SelectedTheme.SecondaryElementStroke
-	end
+	Main.Search.UIStroke.Color = SelectedTheme.SecondaryElementStroke
 
 	if Main:FindFirstChild('Notice') then
 		Main.Notice.BackgroundColor3 = SelectedTheme.Background
 	end
 
-
-		for _, text in ipairs(Rayfield:GetDescendants()) do
-			if text.Parent.Parent ~= Notifications then
-				if text:IsA('TextLabel') or text:IsA('TextBox') then
-					text.TextColor3 = SelectedTheme.TextColor
-					-- Ensure text color is set after any background color change
-					if text.Parent and text.Parent:IsA('Frame') and text.Parent.BackgroundColor3 then
-						text.TextColor3 = SelectedTheme.TextColor
-					end
-				end
-			end
+	for _, text in ipairs(Rayfield:GetDescendants()) do
+		if text.Parent.Parent ~= Notifications then
+			if text:IsA('TextLabel') or text:IsA('TextBox') then text.TextColor3 = SelectedTheme.TextColor end
 		end
+	end
 
 	for _, TabPage in ipairs(Elements:GetChildren()) do
 		for _, Element in ipairs(TabPage:GetChildren()) do
 			if Element.ClassName == "Frame" and Element.Name ~= "Placeholder" and Element.Name ~= "SectionSpacing" and Element.Name ~= "Divider" and Element.Name ~= "SectionTitle" and Element.Name ~= "SearchTitle-fsefsefesfsefesfesfThanks" then
 				Element.BackgroundColor3 = SelectedTheme.ElementBackground
-				   if Element:FindFirstChild('UIStroke') then
-					   Element.UIStroke.Color = SelectedTheme.ElementStroke
-				   end
-				-- Patch: Ensure all TextLabel/TextBox children have correct text color after background change
-				for _, child in ipairs(Element:GetChildren()) do
-					if child:IsA('TextLabel') or child:IsA('TextBox') then
-						child.TextColor3 = SelectedTheme.TextColor
-					end
-				end
-			end
-		end
-	end
-
-	-- memastikan tab terwarnai dengan benar setelah perubahan tema
-	for _, tabbtn in ipairs(TabList:GetChildren()) do
-		if tabbtn.ClassName == 'Frame' and tabbtn.Name ~= 'Placeholder' then
-			if Elements.UIPageLayout.CurrentPage and tostring(Elements.UIPageLayout.CurrentPage) == tabbtn.Title.Text then
-				tabbtn.BackgroundColor3 = SelectedTheme.TabBackgroundSelected
-				tabbtn.BackgroundTransparency = 0
-				tabbtn.Title.TextColor3 = SelectedTheme.SelectedTabTextColor
-				tabbtn.Image.ImageColor3 = SelectedTheme.SelectedTabTextColor
-				if tabbtn:FindFirstChild('UIStroke') then
-					tabbtn.UIStroke.Transparency = 1
-				end
-			else
-				tabbtn.BackgroundColor3 = SelectedTheme.TabBackground
-				tabbtn.BackgroundTransparency = 0.7
-				tabbtn.Title.TextColor3 = SelectedTheme.TabTextColor
-				tabbtn.Image.ImageColor3 = SelectedTheme.TabTextColor
-				if tabbtn:FindFirstChild('UIStroke') then
-					tabbtn.UIStroke.Transparency = 0.5
-				end
-			end
-		end
-	end
-end
-
-local function refreshTabStyles()
-	if not TabList or not Elements or not Elements.UIPageLayout then
-		return
-	end
-
-	for _, tabbtn in ipairs(TabList:GetChildren()) do
-		if tabbtn.ClassName == 'Frame' and tabbtn.Name ~= 'Placeholder' then
-			local isSelected = Elements.UIPageLayout.CurrentPage and tostring(Elements.UIPageLayout.CurrentPage) == tabbtn.Title.Text
-			if isSelected then
-				tabbtn.BackgroundColor3 = SelectedTheme.TabBackgroundSelected
-				tabbtn.BackgroundTransparency = 0
-				tabbtn.Title.TextColor3 = SelectedTheme.SelectedTabTextColor
-				tabbtn.Image.ImageColor3 = SelectedTheme.SelectedTabTextColor
-				if tabbtn:FindFirstChild('UIStroke') then
-					tabbtn.UIStroke.Transparency = 1
-				end
-			else
-				tabbtn.BackgroundColor3 = SelectedTheme.TabBackground
-				tabbtn.BackgroundTransparency = 0.7
-				tabbtn.Title.TextColor3 = SelectedTheme.TabTextColor
-				tabbtn.Image.ImageColor3 = SelectedTheme.TabTextColor
-				if tabbtn:FindFirstChild('UIStroke') then
-					tabbtn.UIStroke.Transparency = 0.5
-				end
+				Element.UIStroke.Color = SelectedTheme.ElementStroke
 			end
 		end
 	end
@@ -1300,17 +1155,13 @@ function RayfieldLibrary:Notify(data) -- action e.g open messages
 		newNotification.Title.TextColor3 = SelectedTheme.TextColor
 		newNotification.Description.TextColor3 = SelectedTheme.TextColor
 		newNotification.BackgroundColor3 = SelectedTheme.Background
-		   if newNotification:FindFirstChild('UIStroke') then
-			   newNotification.UIStroke.Color = SelectedTheme.TextColor
-		   end
+		newNotification.UIStroke.Color = SelectedTheme.TextColor
 		newNotification.Icon.ImageColor3 = SelectedTheme.TextColor
 
 		newNotification.BackgroundTransparency = 1
 		newNotification.Title.TextTransparency = 1
 		newNotification.Description.TextTransparency = 1
-		   if newNotification:FindFirstChild('UIStroke') then
-			   newNotification.UIStroke.Transparency = 1
-		   end
+		newNotification.UIStroke.Transparency = 1
 		newNotification.Shadow.ImageTransparency = 1
 		newNotification.Size = UDim2.new(1, 0, 0, 800)
 		newNotification.Icon.ImageTransparency = 1
@@ -1344,9 +1195,7 @@ function RayfieldLibrary:Notify(data) -- action e.g open messages
 
 		task.wait(0.05)
 		TweenService:Create(newNotification.Description, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {TextTransparency = 0.35}):Play()
-		   if newNotification:FindFirstChild('UIStroke') then
-			   TweenService:Create(newNotification.UIStroke, TweenInfo.new(0.4, Enum.EasingStyle.Exponential), {Transparency = 0.95}):Play()
-		   end
+		TweenService:Create(newNotification.UIStroke, TweenInfo.new(0.4, Enum.EasingStyle.Exponential), {Transparency = 0.95}):Play()
 		TweenService:Create(newNotification.Shadow, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {ImageTransparency = 0.82}):Play()
 
 		local waitDuration = math.min(math.max((#newNotification.Description.Text * 0.1) + 2.5, 3), 10)
@@ -1354,9 +1203,7 @@ function RayfieldLibrary:Notify(data) -- action e.g open messages
 
 		newNotification.Icon.Visible = false
 		TweenService:Create(newNotification, TweenInfo.new(0.4, Enum.EasingStyle.Exponential), {BackgroundTransparency = 1}):Play()
-		   if newNotification:FindFirstChild('UIStroke') then
-			   TweenService:Create(newNotification.UIStroke, TweenInfo.new(0.4, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
-		   end
+		TweenService:Create(newNotification.UIStroke, TweenInfo.new(0.4, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
 		TweenService:Create(newNotification.Shadow, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {ImageTransparency = 1}):Play()
 		TweenService:Create(newNotification.Title, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {TextTransparency = 1}):Play()
 		TweenService:Create(newNotification.Description, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {TextTransparency = 1}):Play()
@@ -1379,9 +1226,7 @@ local function openSearch()
 	Main.Search.Shadow.ImageTransparency = 1
 	Main.Search.Input.TextTransparency = 1
 	Main.Search.Search.ImageTransparency = 1
-	if Main.Search:FindFirstChild('UIStroke') then
-		Main.Search.UIStroke.Transparency = 1
-	end
+	Main.Search.UIStroke.Transparency = 1
 	Main.Search.Size = UDim2.new(1, 0, 0, 80)
 	Main.Search.Position = UDim2.new(0.5, 0, 0, 70)
 
@@ -1395,18 +1240,14 @@ local function openSearch()
 			TweenService:Create(tabbtn, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {BackgroundTransparency = 1}):Play()
 			TweenService:Create(tabbtn.Title, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {TextTransparency = 1}):Play()
 			TweenService:Create(tabbtn.Image, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {ImageTransparency = 1}):Play()
-			   if tabbtn:FindFirstChild('UIStroke') then
-				   TweenService:Create(tabbtn.UIStroke, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
-			   end
+			TweenService:Create(tabbtn.UIStroke, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
 		end
 	end
 
 	Main.Search.Input:CaptureFocus()
 	TweenService:Create(Main.Search.Shadow, TweenInfo.new(0.05, Enum.EasingStyle.Quint), {ImageTransparency = 0.95}):Play()
 	TweenService:Create(Main.Search, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {Position = UDim2.new(0.5, 0, 0, 57), BackgroundTransparency = 0.9}):Play()
-	if Main.Search:FindFirstChild('UIStroke') then
-		TweenService:Create(Main.Search.UIStroke, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {Transparency = 0.8}):Play()
-	end
+	TweenService:Create(Main.Search.UIStroke, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {Transparency = 0.8}):Play()
 	TweenService:Create(Main.Search.Input, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {TextTransparency = 0.2}):Play()
 	TweenService:Create(Main.Search.Search, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {ImageTransparency = 0.5}):Play()
 	TweenService:Create(Main.Search, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Size = UDim2.new(1, -35, 0, 35)}):Play()
@@ -1418,9 +1259,7 @@ local function closeSearch()
 	TweenService:Create(Main.Search, TweenInfo.new(0.35, Enum.EasingStyle.Quint), {BackgroundTransparency = 1, Size = UDim2.new(1, -55, 0, 30)}):Play()
 	TweenService:Create(Main.Search.Search, TweenInfo.new(0.15, Enum.EasingStyle.Quint), {ImageTransparency = 1}):Play()
 	TweenService:Create(Main.Search.Shadow, TweenInfo.new(0.15, Enum.EasingStyle.Quint), {ImageTransparency = 1}):Play()
-	if Main.Search:FindFirstChild('UIStroke') then
-		TweenService:Create(Main.Search.UIStroke, TweenInfo.new(0.15, Enum.EasingStyle.Quint), {Transparency = 1}):Play()
-	end
+	TweenService:Create(Main.Search.UIStroke, TweenInfo.new(0.15, Enum.EasingStyle.Quint), {Transparency = 1}):Play()
 	TweenService:Create(Main.Search.Input, TweenInfo.new(0.15, Enum.EasingStyle.Quint), {TextTransparency = 1}):Play()
 
 	for _, tabbtn in ipairs(TabList:GetChildren()) do
@@ -1430,33 +1269,12 @@ local function closeSearch()
 				TweenService:Create(tabbtn, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0}):Play()
 				TweenService:Create(tabbtn.Image, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {ImageTransparency = 0}):Play()
 				TweenService:Create(tabbtn.Title, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()
-				   if tabbtn:FindFirstChild('UIStroke') then
-					   TweenService:Create(tabbtn.UIStroke, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
-				   end
+				TweenService:Create(tabbtn.UIStroke, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
 			else
 				TweenService:Create(tabbtn, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0.7}):Play()
 				TweenService:Create(tabbtn.Image, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {ImageTransparency = 0.2}):Play()
 				TweenService:Create(tabbtn.Title, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {TextTransparency = 0.2}):Play()
-				   if tabbtn:FindFirstChild('UIStroke') then
-					   TweenService:Create(tabbtn.UIStroke, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {Transparency = 0.5}):Play()
-				   end
-			end
-		end
-	end
-
-	-- Force reapply background colors to prevent tab fade-out "hilang"
-	for _, tabbtn in ipairs(TabList:GetChildren()) do
-		if tabbtn.ClassName == 'Frame' and tabbtn.Name ~= 'Placeholder' then
-			if tostring(Elements.UIPageLayout.CurrentPage) == tabbtn.Title.Text then
-				tabbtn.BackgroundColor3 = SelectedTheme.TabBackgroundSelected
-				tabbtn.BackgroundTransparency = 0
-				tabbtn.Title.TextColor3 = SelectedTheme.SelectedTabTextColor
-				tabbtn.Image.ImageColor3 = SelectedTheme.SelectedTabTextColor
-			else
-				tabbtn.BackgroundColor3 = SelectedTheme.TabBackground
-				tabbtn.BackgroundTransparency = 0.7
-				tabbtn.Title.TextColor3 = SelectedTheme.TabTextColor
-				tabbtn.Image.ImageColor3 = SelectedTheme.TabTextColor
+				TweenService:Create(tabbtn.UIStroke, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {Transparency = 0.5}):Play()
 			end
 		end
 	end
@@ -1480,9 +1298,9 @@ local function Hide(notify: boolean?)
 	Debounce = true
 	if notify then
 		if useMobilePrompt then 
-			RayfieldLibrary:Notify({Title = "Interface Hidden", Content = "The interface has been hidden, you can unhide the interface by tapping 'Show'.", Duration = 3, Image = 4400697855})
+			RayfieldLibrary:Notify({Title = "Interface Hidden", Content = "The interface has been hidden, you can unhide the interface by tapping 'Show'.", Duration = 7, Image = 4400697855})
 		else
-			RayfieldLibrary:Notify({Title = "Interface Hidden", Content = "The interface has been hidden, you can unhide the interface by tapping " .. tostring(getSetting("General", "rayfieldOpen")) .. ".", Duration = 3, Image = 4400697855})
+			RayfieldLibrary:Notify({Title = "Interface Hidden", Content = "The interface has been hidden, you can unhide the interface by tapping " .. tostring(getSetting("General", "rayfieldOpen")) .. ".", Duration = 7, Image = 4400697855})
 		end
 	end
 
@@ -1494,14 +1312,12 @@ local function Hide(notify: boolean?)
 	TweenService:Create(Main.Topbar.CornerRepair, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {BackgroundTransparency = 1}):Play()
 	TweenService:Create(Main.Topbar.Title, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {TextTransparency = 1}):Play()
 	TweenService:Create(Main.Shadow.Image, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {ImageTransparency = 1}):Play()
-	if Topbar:FindFirstChild('UIStroke') then
-		TweenService:Create(Topbar.UIStroke, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
-	end
+	TweenService:Create(Topbar.UIStroke, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
 	TweenService:Create(dragBarCosmetic, TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {BackgroundTransparency = 1}):Play()
 
 	if useMobilePrompt and MPrompt then
-		TweenService:Create(MPrompt, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Size = UDim2.new(0, 120, 0, 30), Position = UDim2.new(0.5, 17, 0, 20), BackgroundTransparency = 0.7}):Play()
-		TweenService:Create(MPrompt.Title, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {TextTransparency = 0.7}):Play()
+		TweenService:Create(MPrompt, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Size = UDim2.new(0, 120, 0, 30), Position = UDim2.new(0.5, 0, 0, 20), BackgroundTransparency = 0.3}):Play()
+		TweenService:Create(MPrompt.Title, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {TextTransparency = 0.3}):Play()
 	end
 
 	for _, TopbarButton in ipairs(Topbar:GetChildren()) do
@@ -1515,9 +1331,7 @@ local function Hide(notify: boolean?)
 			TweenService:Create(tabbtn, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {BackgroundTransparency = 1}):Play()
 			TweenService:Create(tabbtn.Title, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {TextTransparency = 1}):Play()
 			TweenService:Create(tabbtn.Image, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {ImageTransparency = 1}):Play()
-			   if tabbtn:FindFirstChild('UIStroke') then
-				   TweenService:Create(tabbtn.UIStroke, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
-			   end
+			TweenService:Create(tabbtn.UIStroke, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
 		end
 	end
 
@@ -1534,9 +1348,7 @@ local function Hide(notify: boolean?)
 							TweenService:Create(element.Divider, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {BackgroundTransparency = 1}):Play()
 						else
 							TweenService:Create(element, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {BackgroundTransparency = 1}):Play()
-							   if element:FindFirstChild('UIStroke') then
-								   TweenService:Create(element.UIStroke, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
-							   end
+							TweenService:Create(element.UIStroke, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
 							TweenService:Create(element.Title, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {TextTransparency = 1}):Play()
 						end
 						for _, child in ipairs(element:GetChildren()) do
@@ -1559,9 +1371,7 @@ local function Maximise()
 	Debounce = true
 	Topbar.ChangeSize.Image = "rbxassetid://"..10137941941
 
-	if Topbar:FindFirstChild('UIStroke') then
-		TweenService:Create(Topbar.UIStroke, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
-	end
+	TweenService:Create(Topbar.UIStroke, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
 	TweenService:Create(Main.Shadow.Image, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {ImageTransparency = 0.6}):Play()
 	TweenService:Create(Topbar.CornerRepair, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0}):Play()
 	TweenService:Create(Topbar.Divider, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0}):Play()
@@ -1584,9 +1394,7 @@ local function Maximise()
 							TweenService:Create(element.Divider, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0.85}):Play()
 						else
 							TweenService:Create(element, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0}):Play()
-							   if element:FindFirstChild('UIStroke') then
-								   TweenService:Create(element.UIStroke, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {Transparency = 0}):Play()
-							   end
+							TweenService:Create(element.UIStroke, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {Transparency = 0}):Play()
 							TweenService:Create(element.Title, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()
 						end
 						for _, child in ipairs(element:GetChildren()) do
@@ -1608,16 +1416,12 @@ local function Maximise()
 				TweenService:Create(tabbtn, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0}):Play()
 				TweenService:Create(tabbtn.Image, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {ImageTransparency = 0}):Play()
 				TweenService:Create(tabbtn.Title, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()
-				   if tabbtn:FindFirstChild('UIStroke') then
-					   TweenService:Create(tabbtn.UIStroke, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
-				   end
+				TweenService:Create(tabbtn.UIStroke, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
 			else
 				TweenService:Create(tabbtn, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0.7}):Play()
 				TweenService:Create(tabbtn.Image, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {ImageTransparency = 0.2}):Play()
 				TweenService:Create(tabbtn.Title, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {TextTransparency = 0.2}):Play()
-				   if tabbtn:FindFirstChild('UIStroke') then
-					   TweenService:Create(tabbtn.UIStroke, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {Transparency = 0.5}):Play()
-				   end
+				TweenService:Create(tabbtn.UIStroke, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {Transparency = 0.5}):Play()
 			end
 
 		end
@@ -1629,7 +1433,6 @@ end
 
 
 local function Unhide()
-	Rayfield.Enabled = true -- ensure Rayfield is enabled before unhide animation (mobile show button works)
 	Debounce = true
 	Main.Position = UDim2.new(0.5, 0, 0.5, 0)
 	Main.Visible = true
@@ -1831,10 +1634,7 @@ local function updateSetting(category: string, setting: string, value: any)
 	saveSettings()
 end
 
-
-
 local function createSettings(window)
-   if RayfieldDebug then warn('[Rayfield Debug] Entered createSettings') end
    window = window or RayfieldWindow
    -- Check all dependencies before proceeding
    if not (writefile and isfile and readfile and isfolder and makefolder) and not useStudio then
@@ -1844,282 +1644,217 @@ local function createSettings(window)
 	   return
    end
    if not window then
-	   warn('[Rayfield Debug] createSettings: window is nil!')
+	   warn('createSettings: window is nil!')
 	   return
    end
-   if not TabList then warn('[Rayfield Debug] createSettings: TabList is nil!') end
-   if not Elements then warn('[Rayfield Debug] createSettings: Elements is nil!') end
-   if not settingsTable then warn('[Rayfield Debug] createSettings: settingsTable is nil!') end
 
-   local ok, newTab = pcall(function()
-	   return window:CreateTab('Rayfield Settings', 0, true)
-   end)
-   if not ok or not newTab then
-	   warn('[Rayfield Debug] createSettings: Failed to create Rayfield Settings tab')
-	   return
-   end
-   if TabList and TabList['Rayfield Settings'] then
+   local newTab = window:CreateTab('Rayfield Settings', 0, true)
+
+   if TabList['Rayfield Settings'] then
 	   TabList['Rayfield Settings'].LayoutOrder = 1000
    end
-   if Elements and Elements['Rayfield Settings'] then
+
+   if Elements['Rayfield Settings'] then
 	   Elements['Rayfield Settings'].LayoutOrder = 1000
    end
 
    -- Profile Management Section
-   local okSection = pcall(function()
-	   newTab:CreateSection("Profile Management")
-   end)
-   if not okSection then warn('[Rayfield Debug] createSettings: Failed to create Profile Management section') end
+   newTab:CreateSection("Profile Management")
 
-   local profiles = {}
-   local okProfiles = pcall(function()
-	   profiles = ListProfiles()
-   end)
-   if not okProfiles then warn('[Rayfield Debug] createSettings: Failed to list profiles') end
+   local profiles = ListProfiles()
    local currentProfile = (profiles and profiles[1]) or "default"
    local profileDropdown, profileInput
 
-   local okDropdown = pcall(function()
-	   profileDropdown = newTab:CreateDropdown({
-		   Name = "Select Profile",
-		   Options = profiles,
-		   CurrentOption = currentProfile,
-		   Callback = function(selected)
-			   currentProfile = selected
+   profileDropdown = newTab:CreateDropdown({
+	   Name = "Select Profile",
+	   Options = profiles,
+	   CurrentOption = currentProfile,
+	   Callback = function(selected)
+		   currentProfile = selected
+	   end
+   })
+
+   profileInput = newTab:CreateInput({
+	   Name = "Profile Name",
+	   CurrentValue = currentProfile,
+	   PlaceholderText = "Enter profile name...",
+	   Callback = function(val)
+		   currentProfile = val
+	   end
+   })
+
+   newTab:CreateButton({
+	   Name = "Save Profile",
+	   Callback = function()
+		   SaveProfile(currentProfile)
+		   RayfieldLibrary:Notify({Title = "Profile Saved", Content = "Profile '"..currentProfile.."' saved."})
+		   if profileDropdown and profileDropdown.Set then profileDropdown:Set(ListProfiles()) end
+	   end
+   })
+
+   newTab:CreateButton({
+	   Name = "Load Profile",
+	   Callback = function()
+		   LoadProfile(currentProfile)
+		   RayfieldLibrary:Notify({Title = "Profile Loaded", Content = "Profile '"..currentProfile.."' loaded."})
+	   end
+   })
+
+   newTab:CreateButton({
+	   Name = "Overwrite Profile",
+	   Callback = function()
+		   SaveProfile(currentProfile)
+		   RayfieldLibrary:Notify({Title = "Profile Overwritten", Content = "Profile '"..currentProfile.."' overwritten."})
+	   end
+   })
+
+   newTab:CreateButton({
+	   Name = "Delete Profile",
+	   Callback = function()
+		   DeleteProfile(currentProfile)
+		   RayfieldLibrary:Notify({Title = "Profile Deleted", Content = "Profile '"..currentProfile.."' deleted."})
+		   if profileDropdown and profileDropdown.Set then profileDropdown:Set(ListProfiles()) end
+	   end
+   })
+
+   newTab:CreateButton({
+	   Name = "Rename Profile",
+	   Callback = function()
+		   local newName = profileInput and profileInput.Get and profileInput:Get() or nil
+		   if newName and newName ~= currentProfile then
+			   RenameProfile(currentProfile, newName)
+			   RayfieldLibrary:Notify({Title = "Profile Renamed", Content = "Profile renamed to '"..newName.."'."})
+			   if profileDropdown and profileDropdown.Set then profileDropdown:Set(ListProfiles()) end
+			   currentProfile = newName
+			   if profileDropdown and profileDropdown.Set then profileDropdown:Set(newName) end
 		   end
-	   })
-   end)
-   if not okDropdown then warn('[Rayfield Debug] createSettings: Failed to create profile dropdown') end
-
-
-	   local okInput = pcall(function()
-		   profileInput = newTab:CreateInput({
-			   Name = "Profile Name",
-			   CurrentValue = currentProfile,
-			   PlaceholderText = "Enter profile name...",
-			   Callback = function(val)
-				   currentProfile = val
-			   end
-		   })
-	   end)
-	   if not okInput then warn('[Rayfield Debug] createSettings: Failed to create profile input') end
-
-	   local okSaveBtn = pcall(function()
-		   newTab:CreateButton({
-			   Name = "Save Profile",
-			   Callback = function()
-				   SaveProfile(currentProfile)
-				   RayfieldLibrary:Notify({Title = "Profile Saved", Content = "Profile '"..currentProfile.."' saved."})
-				   if profileDropdown and profileDropdown.Set then profileDropdown:Set(ListProfiles()) end
-			   end
-		   })
-	   end)
-	   if not okSaveBtn then warn('[Rayfield Debug] createSettings: Failed to create Save Profile button') end
-
-	   local okLoadBtn = pcall(function()
-		   newTab:CreateButton({
-			   Name = "Load Profile",
-			   Callback = function()
-				   LoadProfile(currentProfile)
-				   RayfieldLibrary:Notify({Title = "Profile Loaded", Content = "Profile '"..currentProfile.."' loaded."})
-			   end
-		   })
-	   end)
-	   if not okLoadBtn then warn('[Rayfield Debug] createSettings: Failed to create Load Profile button') end
-
-	   local okOverwriteBtn = pcall(function()
-		   newTab:CreateButton({
-			   Name = "Overwrite Profile",
-			   Callback = function()
-				   SaveProfile(currentProfile)
-				   RayfieldLibrary:Notify({Title = "Profile Overwritten", Content = "Profile '"..currentProfile.."' overwritten."})
-			   end
-		   })
-	   end)
-	   if not okOverwriteBtn then warn('[Rayfield Debug] createSettings: Failed to create Overwrite Profile button') end
-
-	   local okDeleteBtn = pcall(function()
-		   newTab:CreateButton({
-			   Name = "Delete Profile",
-			   Callback = function()
-				   DeleteProfile(currentProfile)
-				   RayfieldLibrary:Notify({Title = "Profile Deleted", Content = "Profile '"..currentProfile.."' deleted."})
-				   if profileDropdown and profileDropdown.Set then profileDropdown:Set(ListProfiles()) end
-			   end
-		   })
-	   end)
-	   if not okDeleteBtn then warn('[Rayfield Debug] createSettings: Failed to create Delete Profile button') end
-
-	   local okRenameBtn = pcall(function()
-		   newTab:CreateButton({
-			   Name = "Rename Profile",
-			   Callback = function()
-				   local newName = profileInput and profileInput.Get and profileInput:Get() or nil
-				   if newName and newName ~= currentProfile then
-					   RenameProfile(currentProfile, newName)
-					   RayfieldLibrary:Notify({Title = "Profile Renamed", Content = "Profile renamed to '"..newName.."'."})
-					   if profileDropdown and profileDropdown.Set then profileDropdown:Set(ListProfiles()) end
-					   currentProfile = newName
-					   if profileDropdown and profileDropdown.Set then profileDropdown:Set(newName) end
-				   end
-			   end
-		   })
-	   end)
-	   if not okRenameBtn then warn('[Rayfield Debug] createSettings: Failed to create Rename Profile button') end
+	   end
+   })
 
 	-- Settings Sections
 
-	   for categoryName, settingCategory in pairs(settingsTable) do
-		   local okSection = pcall(function()
-			   print("[Rayfield Debug] Creating section for category:", categoryName)
-			   newTab:CreateSection(categoryName)
-		   end)
-		   if not okSection then warn('[Rayfield Debug] createSettings: Failed to create section for category:', categoryName) end
-		   for settingName, setting in pairs(settingCategory) do
-			   local okElement = pcall(function()
-				   print("[Rayfield Debug] Creating element for setting:", settingName, setting.Type)
-				   if setting.Type == 'input' then
-					   setting.Element = newTab:CreateInput({
-						   Name = setting.Name,
-						   CurrentValue = setting.Value,
-						   PlaceholderText = setting.Placeholder,
-						   Ext = true,
-						   RemoveTextAfterFocusLost = setting.ClearOnFocus,
-						   Callback = function(Value)
-							   updateSetting(categoryName, settingName, Value)
-						   end,
-					   })
-				   elseif setting.Type == 'toggle' then
-					   setting.Element = newTab:CreateToggle({
-						   Name = setting.Name,
-						   CurrentValue = setting.Value,
-						   Ext = true,
-						   Callback = function(Value)
-							   updateSetting(categoryName, settingName, Value)
-						   end,
-					   })
-					   -- Add a keybind for this toggle
-					   local keybindFlag = 'Keybind_'..categoryName..'_'..settingName
-					   newTab:CreateKeybind({
-						   Name = setting.Name..' Keybind',
-						   CurrentKeybind = 'None',
-						   HoldToInteract = false,
-						   Ext = true,
-						   CallOnChange = true,
-						   Flag = keybindFlag,
-						   Callback = function(key)
-							   -- When the keybind is pressed, toggle the setting
-							   if setting.Element and typeof(setting.Element.Set) == 'function' then
-								   setting.Element:Set(not setting.Element.Value)
-							   end
-						   end,
-					   })
-				   elseif setting.Type == 'bind' then
-					   setting.Element = newTab:CreateKeybind({
-						   Name = setting.Name,
-						   CurrentKeybind = setting.Value,
-						   HoldToInteract = false,
-						   Ext = true,
-						   CallOnChange = true,
-						   Callback = function(Value)
-							   updateSetting(categoryName, settingName, Value)
-						   end,
-					   })
-				   end
-			   end)
-			   if not okElement then warn('[Rayfield Debug] createSettings: Failed to create element for setting:', settingName, setting.Type) end
+   for categoryName, settingCategory in pairs(settingsTable) do
+	   newTab:CreateSection(categoryName)
+	   for settingName, setting in pairs(settingCategory) do
+		   if setting.Type == 'input' then
+			   setting.Element = newTab:CreateInput({
+				   Name = setting.Name,
+				   CurrentValue = setting.Value,
+				   PlaceholderText = setting.Placeholder,
+				   Ext = true,
+				   RemoveTextAfterFocusLost = setting.ClearOnFocus,
+				   Callback = function(Value)
+					   updateSetting(categoryName, settingName, Value)
+				   end,
+			   })
+		   elseif setting.Type == 'toggle' then
+			   setting.Element = newTab:CreateToggle({
+				   Name = setting.Name,
+				   CurrentValue = setting.Value,
+				   Ext = true,
+				   Callback = function(Value)
+					   updateSetting(categoryName, settingName, Value)
+				   end,
+			   })
+			   -- Add a keybind for this toggle
+			   local keybindFlag = 'Keybind_'..categoryName..'_'..settingName
+			   newTab:CreateKeybind({
+				   Name = setting.Name..' Keybind',
+				   CurrentKeybind = 'None',
+				   HoldToInteract = false,
+				   Ext = true,
+				   CallOnChange = true,
+				   Flag = keybindFlag,
+				   Callback = function(key)
+					   -- When the keybind is pressed, toggle the setting
+					   if setting.Element and typeof(setting.Element.Set) == 'function' then
+						   setting.Element:Set(not setting.Element.Value)
+					   end
+				   end,
+			   })
+		   elseif setting.Type == 'bind' then
+			   setting.Element = newTab:CreateKeybind({
+				   Name = setting.Name,
+				   CurrentKeybind = setting.Value,
+				   HoldToInteract = false,
+				   Ext = true,
+				   CallOnChange = true,
+				   Callback = function(Value)
+					   updateSetting(categoryName, settingName, Value)
+				   end,
+			   })
 		   end
 	   end
+   end
 
+   -- Theme selector
+   newTab:CreateSection("Theme")
 
-	   -- Theme selector
-	   local okThemeSection = pcall(function()
-		   newTab:CreateSection("Theme")
-	   end)
-	   if not okThemeSection then warn('[Rayfield Debug] createSettings: Failed to create Theme section') end
-
-	   local themeList = {}
-	   for themeName, _ in pairs(RayfieldLibrary.Theme) do
-		   table.insert(themeList, themeName)
-	   end
-	   table.sort(themeList)
-	   local currentTheme = nil
-	   for k,v in pairs(RayfieldLibrary.Theme) do
-		   if v == SelectedTheme then currentTheme = k break end
-	   end
-	   local okThemeDropdown = pcall(function()
-		   newTab:CreateDropdown({
-			   Name = "Select Theme",
-			   Options = themeList,
-			   CurrentOption = currentTheme or themeList[1],
-			   Callback = function(selected)
-				   -- Only call ModifyTheme if it's a function on Window or Rayfield (not a ScreenGui)
-				   if selected then
-					   if Window and typeof(Window.ModifyTheme) == "function" then
-						   Window.ModifyTheme(selected)
-					   elseif Rayfield and typeof(Rayfield.ModifyTheme) == "function" then
-						   Rayfield.ModifyTheme(selected)
-					   else
-						   ChangeTheme(selected)
-					   end
-				   end
+   local themeList = {}
+   for themeName, _ in pairs(RayfieldLibrary.Theme) do
+	   table.insert(themeList, themeName)
+   end
+   table.sort(themeList)
+   local currentTheme = nil
+   for k,v in pairs(RayfieldLibrary.Theme) do
+	   if v == SelectedTheme then currentTheme = k break end
+   end
+   newTab:CreateDropdown({
+	   Name = "Select Theme",
+	   Options = themeList,
+	   CurrentOption = currentTheme or themeList[1],
+	   Callback = function(selected)
+		   if selected then
+			   if Window and typeof(Window.ModifyTheme) == "function" then
+				   Window.ModifyTheme(selected)
+			   elseif Rayfield and typeof(Rayfield.ModifyTheme) == "function" then
+				   Rayfield.ModifyTheme(selected)
+			   else
+				   ChangeTheme(selected)
 			   end
-		   })
-	   end)
-	   if not okThemeDropdown then warn('[Rayfield Debug] createSettings: Failed to create Theme dropdown') end
+		   end
+	   end
+   })
 
 	-- Rayfield menu/style section
-	local okMenuSection = pcall(function()
-		newTab:CreateSection("Menu Settings")
-	end)
-	if not okMenuSection then warn('[Rayfield Debug] createSettings: Failed to create Menu Settings section') end
+	newTab:CreateSection("Menu Settings")
 
-	local okMenuDropdown = pcall(function()
-		newTab:CreateDropdown({
-			Name = "Menu Style",
-			Options = {"Default", "Compact", "Minimal"},
-			CurrentOption = getSetting("Rayfield", "menuStyle") or "Default",
-			Callback = function(selected)
-				updateSetting("Rayfield", "menuStyle", selected)
-			end,
-		})
-	end)
-	if not okMenuDropdown then warn('[Rayfield Debug] createSettings: Failed to create Menu Style dropdown') end
+	newTab:CreateDropdown({
+		Name = "Menu Style",
+		Options = {"Default", "Compact", "Minimal"},
+		CurrentOption = getSetting("Rayfield", "menuStyle") or "Default",
+		Callback = function(selected)
+			updateSetting("Rayfield", "menuStyle", selected)
+		end,
+	})
 
 	-- Show button transparency
-	if not okMenuDropdown then end
-
-	local okButtonTransparency = pcall(function()
-		newTab:CreateInput({
-			Name = "Show Button Transparency",
-			CurrentValue = tostring(getSetting("Rayfield", "showButtonTransparency") or 0.8),
-			PlaceholderText = "0.0 - 1.0",
-			Callback = function(val)
-				updateSetting("Rayfield", "showButtonTransparency", val)
-			end,
-		})
-	end)
-	if not okButtonTransparency then warn('[Rayfield Debug] createSettings: Failed to create Show Button Transparency input') end
+	newTab:CreateInput({
+		Name = "Show Button Transparency",
+		CurrentValue = tostring(getSetting("Rayfield", "showButtonTransparency") or 0.8),
+		PlaceholderText = "0.0 - 1.0",
+		Callback = function(val)
+			updateSetting("Rayfield", "showButtonTransparency", val)
+		end,
+	})
 
 	-- Toggle keybinds for non-settings tabs
-	local okToggleKeybindSection = pcall(function()
-		newTab:CreateSection("Toggle Keybinds")
-		for key, entry in pairs(RayfieldLibrary.TabToggleKeybinds) do
-			local currentKey = entry.Keybind or "None"
-			newTab:CreateKeybind({
-				Name = key,
-				CurrentKeybind = currentKey,
-				HoldToInteract = false,
-				Ext = true,
-				CallOnChange = true,
-				Callback = function(newKey)
-					entry.Keybind = newKey
-				end,
-			})
-		end
-	end)
-	if not okToggleKeybindSection then warn('[Rayfield Debug] createSettings: Failed to create Toggle Keybinds section') end
+	newTab:CreateSection("Toggle Keybinds")
+	for key, entry in pairs(RayfieldLibrary.TabToggleKeybinds) do
+		local currentKey = entry.Keybind or "None"
+		newTab:CreateKeybind({
+			Name = key,
+			CurrentKeybind = currentKey,
+			HoldToInteract = false,
+			Ext = true,
+			CallOnChange = true,
+			Callback = function(newKey)
+				entry.Keybind = newKey
+			end,
+		})
+	end
 
+	settingsCreated = true
 	loadSettings()
 	saveSettings()
 end
@@ -2127,11 +1862,6 @@ end
 
 
 function RayfieldLibrary:CreateWindow(Settings)
-	if not Settings or type(Settings) ~= 'table' then
-		warn('[Rayfield Debug] CreateWindow called with nil or invalid Settings, using defaults.')
-		Settings = {}
-	end
-
 	if Rayfield:FindFirstChild('Loading') then
 		if getgenv and not getgenv().rayfieldCached then
 			Rayfield.Enabled = true
@@ -2142,16 +1872,12 @@ function RayfieldLibrary:CreateWindow(Settings)
 		end
 	end
 
-	-- Ensure the Rayfield interface is enabled after CreateWindow is called,
-	-- including 2nd run and key system passthrough paths.
-	Rayfield.Enabled = true
-
 	if getgenv then getgenv().rayfieldCached = true end
 
 	if not correctBuild and not Settings.DisableBuildWarnings then
 		task.delay(3, 
 			function() 
-				RayfieldLibrary:Notify({Title = 'Build Mismatch', Content = 'Rayfield may encounter issues as you are running an incompatible interface version ('.. ((Rayfield:FindFirstChild('Build') and Rayfield.Build.Value) or 'No Build') ..').\n\nThis version of Rayfield is intended for interface build '..InterfaceBuild..'.\n\nTry rejoining and then run the script twice.', Image = 4335487866, Duration = 5})		
+				RayfieldLibrary:Notify({Title = 'Build Mismatch', Content = 'Rayfield may encounter issues as you are running an incompatible interface version ('.. ((Rayfield:FindFirstChild('Build') and Rayfield.Build.Value) or 'No Build') ..').\n\nThis version of Rayfield is intended for interface build '..InterfaceBuild..'.\n\nTry rejoining and then run the script twice.', Image = 4335487866, Duration = 15})		
 			end)
 	end
 
@@ -2190,7 +1916,7 @@ function RayfieldLibrary:CreateWindow(Settings)
 	LoadingFrame.Subtitle.TextTransparency = 1
 
 	if Settings.ShowText then
-		MPrompt.Title.Text = 'Show Menu'
+		MPrompt.Title.Text = 'Show '..Settings.ShowText
 	end
 
 	LoadingFrame.Version.TextTransparency = 1
@@ -2250,7 +1976,7 @@ function RayfieldLibrary:CreateWindow(Settings)
 				RayfieldLibrary:Notify({
 					Title = "Rayfield Interface",
 					Content = "Enjoying this UI library? Find it at sirius.menu/discord",
-					Duration = 1,
+					Duration = 7,
 					Image = 4370033185,
 				})
 			end
@@ -2454,7 +2180,6 @@ function RayfieldLibrary:CreateWindow(Settings)
 					TweenService:Create(KeyMain.Hide, TweenInfo.new(0.4, Enum.EasingStyle.Exponential), {ImageTransparency = 1}):Play()
 					task.wait(0.51)
 					Passthrough = true
-					Rayfield.Enabled = true -- make sure UI shows after key unlock
 					KeyMain.Visible = false
 					if Settings.KeySettings.SaveKey then
 						callSafely(writefile, RayfieldFolder.."/Key System".."/"..Settings.KeySettings.FileName..ConfigurationExtension, FoundKey)
@@ -2509,9 +2234,27 @@ function RayfieldLibrary:CreateWindow(Settings)
 			end)
 		else
 			Passthrough = true
-			Rayfield.Enabled = true -- enable when no key system is active
 		end
-end
+	end
+	if Settings.KeySystem then
+		repeat task.wait() until Passthrough
+	end
+
+	Notifications.Template.Visible = false
+	Notifications.Visible = true
+	Rayfield.Enabled = true
+
+	task.wait(0.5)
+	TweenService:Create(Main, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0}):Play()
+	TweenService:Create(Main.Shadow.Image, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {ImageTransparency = 0.6}):Play()
+	task.wait(0.1)
+	TweenService:Create(LoadingFrame.Title, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()
+	task.wait(0.05)
+	TweenService:Create(LoadingFrame.Subtitle, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()
+	task.wait(0.05)
+	TweenService:Create(LoadingFrame.Version, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()
+
+
 	Elements.Template.LayoutOrder = 100000
 	Elements.Template.Visible = false
 
@@ -2521,7 +2264,6 @@ end
 	-- Tab
 	local FirstTab = false
 	local Window = {}
-	RayfieldWindow = Window
 	function Window:CreateTab(Name, Image, Ext)
 		local SDone = false
 		local TabButton = TabList.Template:Clone()
@@ -2556,7 +2298,7 @@ end
 		TabButton.Image.ImageTransparency = 1
 		TabButton.UIStroke.Transparency = 1
 
-		TabButton.Visible = true
+		TabButton.Visible = not Ext or false
 
 		-- Create Elements Page
 		local TabPage = Elements.Template:Clone()
@@ -2611,7 +2353,8 @@ end
 			TweenService:Create(TabButton.Title, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()
 		end
 
-		refreshTabStyles()
+
+		TabButton.Interact.MouseButton1Click:Connect(function()
 			if Minimised then return end
 			TweenService:Create(TabButton, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0}):Play()
 			TweenService:Create(TabButton.UIStroke, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
@@ -2636,7 +2379,6 @@ end
 			if Elements.UIPageLayout.CurrentPage ~= TabPage then
 				Elements.UIPageLayout:JumpTo(TabPage)
 			end
-			refreshTabStyles()
 		end)
 
 		local Tab = {}
@@ -3097,12 +2839,10 @@ end
 				end
 			end
 
-			   Rayfield.Main:GetPropertyChangedSignal('BackgroundColor3'):Connect(function()
-				   if not IgnoreTheme then
-					   Label.BackgroundColor3 = SelectedTheme.SecondaryElementBackground
-					   Label.UIStroke.Color = SelectedTheme.SecondaryElementStroke
-				   end
-			   end)
+			Rayfield.Main:GetPropertyChangedSignal('BackgroundColor3'):Connect(function()
+				Label.BackgroundColor3 = IgnoreTheme and (Color or Label.BackgroundColor3) or SelectedTheme.SecondaryElementBackground
+				Label.UIStroke.Color = IgnoreTheme and (Color or Label.BackgroundColor3) or SelectedTheme.SecondaryElementStroke
+			end)
 
 			return LabelValue
 		end
@@ -3851,12 +3591,15 @@ end
 				end
 			end)
 
-			-- Register keybind mapping for all non-settings tabs
-			if TabPage and TabPage.Name ~= 'Rayfield Settings' then
-				local entry = RayfieldLibrary:RegisterToggleKeybind(TabPage.Name, ToggleSettings.Name, ToggleSettings)
-				entry.ToggleFunction = function()
-					ToggleSettings:Set(not ToggleSettings.CurrentValue)
-				end
+			-- Register toggle for keybind system
+			if ToggleSettings.Name then
+				RayfieldLibrary.TabToggleKeybinds[ToggleSettings.Name] = {
+					Keybind = nil, -- Will be set in settings
+					ToggleSettings = ToggleSettings,
+					ToggleFunction = function()
+						ToggleSettings:Set(not ToggleSettings.CurrentValue)
+					end
+				}
 			end
 
 			return ToggleSettings
@@ -4110,9 +3853,11 @@ end
 		end
 	end
 
+	local success, result = pcall(function()
+		createSettings(Window)
+	end)
 
-	   -- Remove unconditional settings tab creation. It will be created on demand by the Settings button.
-	   Window._settingsTabCreated = false
+	if not success then warn('Rayfield had an issue creating settings.') end
 
 	return Window
 end
@@ -4155,11 +3900,6 @@ Topbar.ChangeSize.MouseButton1Click:Connect(function()
 		Minimised = true
 		Minimise()
 	end
-end)
-
-Topbar.Hide.MouseButton1Click:Connect(function()
-	if Debounce then return end
-	Hide(true) -- tutup/hidden Rayfield dengan notifikasi
 end)
 
 Main.Search.Input:GetPropertyChangedSignal('Text'):Connect(function()
@@ -4216,57 +3956,31 @@ Topbar.Search.MouseButton1Click:Connect(function()
 	end)
 end)
 
-
 if Topbar:FindFirstChild('Settings') then
-   Topbar.Settings.Visible = true -- Always visible
-   Topbar.Settings.MouseButton1Click:Connect(function()
-	   task.spawn(function()
-		   -- Only create the settings tab if it hasn't been created yet
-		   local win = Window or RayfieldWindow
-		   if not win then
-			   warn('[Rayfield Debug] Window is nil, cannot create settings tab.')
-			   return
-		   end
-		   if win and type(win) == "table" then
-			   if not win._settingsTabCreated then
-				   local success, result = pcall(function()
-					   createSettings(win)
-				   end)
-				   if not success then 
-					   warn('Rayfield had an issue creating settings: ' .. tostring(result))
-					   print('Error details:', result)
-				   end
-				   win._settingsTabCreated = true
-			   end
-		   else
-			   warn('[Rayfield Debug] Window is not a valid table, cannot create settings tab.')
-		   end
-		   if TabList then
-			   for _, OtherTabButton in ipairs(TabList:GetChildren()) do
-				   if OtherTabButton.Name ~= "Template" and OtherTabButton.ClassName == "Frame" and OtherTabButton.Name ~= "Placeholder" then
-					   TweenService:Create(OtherTabButton, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.TabBackground}):Play()
-					   local title = OtherTabButton:FindFirstChild('Title')
-					   local image = OtherTabButton:FindFirstChild('Image')
-					   local uiStroke = OtherTabButton:FindFirstChild('UIStroke')
-					   if title then TweenService:Create(title, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {TextColor3 = SelectedTheme.TabTextColor}):Play() end
-					   if image then TweenService:Create(image, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {ImageColor3 = SelectedTheme.TabTextColor}):Play() end
-					   TweenService:Create(OtherTabButton, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0.7}):Play()
-					   if title then TweenService:Create(title, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {TextTransparency = 0.2}):Play() end
-					   if image then TweenService:Create(image, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {ImageTransparency = 0.2}):Play() end
-					   if uiStroke then TweenService:Create(uiStroke, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {Transparency = 0.5}):Play() end
-				   end
-			   end
-		   end
-		   local rayfieldSettingsTab = Elements and Elements:FindFirstChild('Rayfield Settings')
-		   if rayfieldSettingsTab and Elements.UIPageLayout then
-			   Elements.UIPageLayout:JumpTo(rayfieldSettingsTab)
-		   else
-			   warn("[Rayfield] Rayfield Settings tab not found in Elements! Navigation skipped.")
-		   end
-	   end)
-   end)
+	Topbar.Settings.MouseButton1Click:Connect(function()
+		task.spawn(function()
+			for _, OtherTabButton in ipairs(TabList:GetChildren()) do
+				if OtherTabButton.Name ~= "Template" and OtherTabButton.ClassName == "Frame" and OtherTabButton ~= TabButton and OtherTabButton.Name ~= "Placeholder" then
+					TweenService:Create(OtherTabButton, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.TabBackground}):Play()
+					TweenService:Create(OtherTabButton.Title, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {TextColor3 = SelectedTheme.TabTextColor}):Play()
+					TweenService:Create(OtherTabButton.Image, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {ImageColor3 = SelectedTheme.TabTextColor}):Play()
+					TweenService:Create(OtherTabButton, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0.7}):Play()
+					TweenService:Create(OtherTabButton.Title, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {TextTransparency = 0.2}):Play()
+					TweenService:Create(OtherTabButton.Image, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {ImageTransparency = 0.2}):Play()
+					TweenService:Create(OtherTabButton.UIStroke, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {Transparency = 0.5}):Play()
+				end
+			end
+
+			Elements.UIPageLayout:JumpTo(Elements['Rayfield Settings'])
+		end)
+	end)
+
 end
 
+
+Topbar.Hide.MouseButton1Click:Connect(function()
+	setVisibility(Hidden, not useMobileSizing)
+end)
 
 hideHotkeyConnection = UserInputService.InputBegan:Connect(function(input, processed)
 	if (input.KeyCode == Enum.KeyCode[getSetting("General", "rayfieldOpen")]) and not processed then
@@ -4281,7 +3995,6 @@ hideHotkeyConnection = UserInputService.InputBegan:Connect(function(input, proce
 	end
 end)
 
--- Custom per-toggle keybind handling
 local toggleKeybindConnection = UserInputService.InputBegan:Connect(function(input, processed)
 	if processed then return end
 	if not input.KeyCode then return end
@@ -4294,22 +4007,6 @@ local toggleKeybindConnection = UserInputService.InputBegan:Connect(function(inp
 				pcall(function()
 					entry.ToggleSettings:Set(not entry.ToggleSettings.CurrentValue)
 				end)
-			end
-		end
-	end
-end)
-
--- auto-create settings tab on startup when possible
-task.spawn(function()
-	wait(0.1)
-	local win = RayfieldWindow or Window
-	if Topbar and Topbar:FindFirstChild('Settings') and win and type(win) == 'table' then
-		if not win._settingsTabCreated then
-			local success = pcall(function()
-				createSettings(win)
-			end)
-			if success then
-				win._settingsTabCreated = true
 			end
 		end
 	end
@@ -4618,80 +4315,6 @@ task.delay(4, function()
 		Main.Notice.Visible = false
 	end
 end)
-
-local SafeInitSystem = {
-	Elements = {},
-	PendingOperations = {},
-	InitDelay = 0.1  
-}
-
-function SafeInitSystem:Register(elementName, element)
-	self.Elements[elementName] = element
-	-- Execute any pending operations for this element
-	if self.PendingOperations[elementName] then
-		for _, operation in ipairs(self.PendingOperations[elementName]) do
-			pcall(function()
-				if operation.type == "set" and element.Set then
-					element:Set(operation.value)
-				elseif operation.type == "callback" then
-					operation.func(element)
-				end
-			end)
-		end
-		self.PendingOperations[elementName] = nil
-	end
-end
-
-function SafeInitSystem:SafeSet(elementName, value)
-	if self.Elements[elementName] then
-		pcall(function()
-			if self.Elements[elementName].Set then
-				self.Elements[elementName]:Set(value)
-			end
-		end)
-	else
-		-- Element doesn't exist yet, queue the operation
-		if not self.PendingOperations[elementName] then
-			self.PendingOperations[elementName] = {}
-		end
-		table.insert(self.PendingOperations[elementName], {type = "set", value = value})
-	end
-end
-
-function SafeInitSystem:SafeCallback(elementName, callback)
-	if self.Elements[elementName] then
-		pcall(callback, self.Elements[elementName])
-	else
-		-- Element doesn't exist yet, queue the operation
-		if not self.PendingOperations[elementName] then
-			self.PendingOperations[elementName] = {}
-		end
-		table.insert(self.PendingOperations[elementName], {type = "callback", func = callback})
-	end
-end
-
-function SafeInitSystem:WaitForElement(elementName, maxWait)
-	maxWait = maxWait or 5
-	local startTime = tick()
-	while not self.Elements[elementName] and (tick() - startTime) < maxWait do
-		task.wait(0.05)
-	end
-	return self.Elements[elementName]
-end
-
--- Make safe init system globally accessible
-getgenv().RayfieldSafeInit = SafeInitSystem
-
--- Override RegisterElement for all Tab creation functions to auto-register elements
-local originalCreateToggle = nil
-local originalCreateButton = nil
-local originalCreateSlider = nil
-local originalCreateDropdown = nil
-
-function RayfieldLibrary.RegisterElement(elementName, element)
-	SafeInitSystem:Register(elementName, element)
-end
-
 
 return RayfieldLibrary
 
