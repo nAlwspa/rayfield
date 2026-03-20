@@ -193,6 +193,11 @@ local settingsTable = {
 	},
 	System = {
 		usageAnalytics = {Type = 'toggle', Value = true, Name = 'Anonymised Analytics'},
+	},
+	Rayfield = {
+		customTheme = {Type = 'input', Value = 'Default', Name = 'Custom Theme Name'},
+		menuStyle = {Type = 'input', Value = 'Default', Name = 'Menu Style (Default/Compact/Minimal)'},
+		showButtonTransparency = {Type = 'input', Value = '0.8', Name = 'Show Button Transparency (0-1)'},
 	}
 }
 
@@ -803,10 +808,19 @@ local UserInputService = getService("UserInputService")
 local TweenService = getService("TweenService")
 local Players = getService("Players")
 local CoreGui = getService("CoreGui")
+if not CoreGui then
+	warn("[Rayfield] CoreGui service not available, aborting interface creation")
+	return
+end
 
 -- Interface Management
 
-local Rayfield = useStudio and script.Parent:FindFirstChild('Rayfield') or game:GetObjects("rbxassetid://10804731440")[1]
+local Rayfield = useStudio and script.Parent:FindFirstChild('Rayfield') or (game:GetObjects("rbxassetid://10804731440")[1] or nil)
+if not Rayfield then
+	warn("[Rayfield] Failed to load Rayfield interface object from assetid")
+	return
+end
+
 local buildAttempts = 0
 local correctBuild = false
 local warned
@@ -912,6 +926,19 @@ local Debounce = false
 local searchOpen = false
 local Notifications = Rayfield.Notifications
 local keybindConnections = {} -- For storing keybind connections to disconnect when Rayfield is destroyed
+
+-- global keybind mapping for toggle controls in non-settings tabs
+RayfieldLibrary.TabToggleKeybinds = {}
+function RayfieldLibrary:RegisterToggleKeybind(TabName, ToggleName, ToggleSettings)
+	local key = TabName.." - "..ToggleName
+	self.TabToggleKeybinds[key] = {
+		TabName = TabName,
+		ToggleName = ToggleName,
+		ToggleSettings = ToggleSettings,
+		Keybind = "None",
+	}
+	return self.TabToggleKeybinds[key]
+end
 
 local SelectedTheme = RayfieldLibrary.Theme.Default
 
@@ -1773,6 +1800,34 @@ local function updateSetting(category: string, setting: string, value: any)
 	end
 	settingsTable[category][setting].Value = value
 	overriddenSettings[category .. "." .. setting] = nil -- If user changes an overriden setting, remove the override
+
+	-- Apply runtime effect for new settings
+	if category == 'Rayfield' and setting == 'showButtonTransparency' then
+		local transparency = tonumber(value) or 0.8
+		transparency = math.clamp(transparency, 0, 1)
+		if Topbar then
+			if Topbar.Hide then Topbar.Hide.ImageTransparency = transparency end
+			if Topbar.ChangeSize then Topbar.ChangeSize.ImageTransparency = transparency end
+			if Topbar.Search then Topbar.Search.ImageTransparency = transparency end
+			if Topbar.Settings then Topbar.Settings.ImageTransparency = transparency end
+		end
+	elseif category == 'Rayfield' and setting == 'customTheme' then
+		if value and value ~= '' then
+			pcall(function()
+				ChangeTheme(value)
+			end)
+		end
+	elseif category == 'Rayfield' and setting == 'menuStyle' then
+		-- Placeholder menu style control
+		if value == 'Compact' then
+			if Main then Main.Size = UDim2.new(0, 420, 0, 350) end
+		elseif value == 'Minimal' then
+			if Main then Main.Size = UDim2.new(0, 420, 0, 270) end
+		else
+			if Main then Main.Size = UDim2.new(0, 420, 0, 475) end
+		end
+	end
+
 	saveSettings()
 end
 
@@ -2013,8 +2068,58 @@ local function createSettings(window)
 	   end)
 	   if not okThemeDropdown then warn('[Rayfield Debug] createSettings: Failed to create Theme dropdown') end
 
-	settingsCreated = true
-	print("[Rayfield Debug] settingsCreated set to true, calling loadSettings()")
+	-- Rayfield menu/style section
+	local okMenuSection = pcall(function()
+		newTab:CreateSection("Menu Settings")
+	end)
+	if not okMenuSection then warn('[Rayfield Debug] createSettings: Failed to create Menu Settings section') end
+
+	local okMenuDropdown = pcall(function()
+		newTab:CreateDropdown({
+			Name = "Menu Style",
+			Options = {"Default", "Compact", "Minimal"},
+			CurrentOption = getSetting("Rayfield", "menuStyle") or "Default",
+			Callback = function(selected)
+				updateSetting("Rayfield", "menuStyle", selected)
+			end,
+		})
+	end)
+	if not okMenuDropdown then warn('[Rayfield Debug] createSettings: Failed to create Menu Style dropdown') end
+
+	-- Show button transparency
+	if not okMenuDropdown then end
+
+	local okButtonTransparency = pcall(function()
+		newTab:CreateInput({
+			Name = "Show Button Transparency",
+			CurrentValue = tostring(getSetting("Rayfield", "showButtonTransparency") or 0.8),
+			PlaceholderText = "0.0 - 1.0",
+			Callback = function(val)
+				updateSetting("Rayfield", "showButtonTransparency", val)
+			end,
+		})
+	end)
+	if not okButtonTransparency then warn('[Rayfield Debug] createSettings: Failed to create Show Button Transparency input') end
+
+	-- Toggle keybinds for non-settings tabs
+	local okToggleKeybindSection = pcall(function()
+		newTab:CreateSection("Toggle Keybinds")
+		for key, entry in pairs(RayfieldLibrary.TabToggleKeybinds) do
+			local currentKey = entry.Keybind or "None"
+			newTab:CreateKeybind({
+				Name = key,
+				CurrentKeybind = currentKey,
+				HoldToInteract = false,
+				Ext = true,
+				CallOnChange = true,
+				Callback = function(newKey)
+					entry.Keybind = newKey
+				end,
+			})
+		end
+	end)
+	if not okToggleKeybindSection then warn('[Rayfield Debug] createSettings: Failed to create Toggle Keybinds section') end
+
 	loadSettings()
 	saveSettings()
 end
@@ -2046,7 +2151,7 @@ function RayfieldLibrary:CreateWindow(Settings)
 	if not correctBuild and not Settings.DisableBuildWarnings then
 		task.delay(3, 
 			function() 
-				RayfieldLibrary:Notify({Title = 'Build Mismatch', Content = 'Rayfield may encounter issues as you are running an incompatible interface version ('.. ((Rayfield:FindFirstChild('Build') and Rayfield.Build.Value) or 'No Build') ..').\n\nThis version of Rayfield is intended for interface build '..InterfaceBuild..'.\n\nTry rejoining and then run the script twice.', Image = 4335487866, Duration = 15})		
+				RayfieldLibrary:Notify({Title = 'Build Mismatch', Content = 'Rayfield may encounter issues as you are running an incompatible interface version ('.. ((Rayfield:FindFirstChild('Build') and Rayfield.Build.Value) or 'No Build') ..').\n\nThis version of Rayfield is intended for interface build '..InterfaceBuild..'.\n\nTry rejoining and then run the script twice.', Image = 4335487866, Duration = 5})		
 			end)
 	end
 
@@ -3746,6 +3851,14 @@ end
 				end
 			end)
 
+			-- Register keybind mapping for all non-settings tabs
+			if TabPage and TabPage.Name ~= 'Rayfield Settings' then
+				local entry = RayfieldLibrary:RegisterToggleKeybind(TabPage.Name, ToggleSettings.Name, ToggleSettings)
+				entry.ToggleFunction = function()
+					ToggleSettings:Set(not ToggleSettings.CurrentValue)
+				end
+			end
+
 			return ToggleSettings
 		end
 
@@ -3972,15 +4085,16 @@ end
 	TweenService:Create(Topbar.Divider, TweenInfo.new(1, Enum.EasingStyle.Exponential), {Size = UDim2.new(1, 0, 0, 1)}):Play()
 	TweenService:Create(Topbar.Title, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()
 	task.wait(0.05)
-	TweenService:Create(Topbar.Search, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {ImageTransparency = 0.8}):Play()
+	local showTransparency = math.clamp(tonumber(getSetting('Rayfield', 'showButtonTransparency')) or 0.8, 0, 1)
+	TweenService:Create(Topbar.Search, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {ImageTransparency = showTransparency}):Play()
 	task.wait(0.05)
 	if Topbar:FindFirstChild('Settings') then
-		TweenService:Create(Topbar.Settings, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {ImageTransparency = 0.8}):Play()
+		TweenService:Create(Topbar.Settings, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {ImageTransparency = showTransparency}):Play()
 		task.wait(0.05)
 	end
-	TweenService:Create(Topbar.ChangeSize, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {ImageTransparency = 0.8}):Play()
+	TweenService:Create(Topbar.ChangeSize, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {ImageTransparency = showTransparency}):Play()
 	task.wait(0.05)
-	TweenService:Create(Topbar.Hide, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {ImageTransparency = 0.8}):Play()
+	TweenService:Create(Topbar.Hide, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {ImageTransparency = showTransparency}):Play()
 	task.wait(0.3)
 
 	if dragBar then
@@ -4163,6 +4277,24 @@ hideHotkeyConnection = UserInputService.InputBegan:Connect(function(input, proce
 		else
 			Hidden = true
 			Hide()
+		end
+	end
+end)
+
+-- Custom per-toggle keybind handling
+local toggleKeybindConnection = UserInputService.InputBegan:Connect(function(input, processed)
+	if processed then return end
+	if not input.KeyCode then return end
+	local pressed = tostring(input.KeyCode):gsub("Enum.KeyCode.", "")
+	for _, entry in pairs(RayfieldLibrary.TabToggleKeybinds) do
+		if entry.Keybind and entry.Keybind == pressed then
+			if entry.ToggleFunction and type(entry.ToggleFunction) == "function" then
+				pcall(entry.ToggleFunction)
+			elseif entry.ToggleSettings and entry.ToggleSettings.Set then
+				pcall(function()
+					entry.ToggleSettings:Set(not entry.ToggleSettings.CurrentValue)
+				end)
+			end
 		end
 	end
 end)
