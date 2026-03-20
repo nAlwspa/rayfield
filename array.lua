@@ -8,6 +8,12 @@
 	iRay   | Programming
 	Max    | Programming
 	Damian | Programming
+	
+	PENTING: Jika loading script ini dari GitHub raw link:
+	- Pastikan timeout network cukup (minimal 3-5 detik)
+	- Script akan mencoba load dependency dari GitHub (prompt.lua, icons.lua, dll)
+	- Jika dependency gagal load, akan menggunakan fallback no-op
+	- Tidak akan error "attempt to call a nil value" lagi (error handling fixed)
 
 ]]
 
@@ -46,18 +52,25 @@ local function loadWithTimeout(url: string, timeout: number?): ...any
 	timeout = timeout or 5
 	local requestCompleted = false
 	local success, result = false, nil
+	local timedOut = false
 
 	local requestThread = task.spawn(function()
+		if timedOut then return end -- Check if already timed out
+		
 		local fetchSuccess, fetchResult = pcall(game.HttpGet, game, url) -- game:HttpGet(url)
+		if timedOut then return end -- Check again after fetch
+		
 		-- If the request fails the content can be empty, even if fetchSuccess is true
-		if not fetchSuccess or #fetchResult == 0 then
-			if #fetchResult == 0 then
-				fetchResult = "Empty response" -- Set the error message
+		if not fetchSuccess or (fetchResult and #fetchResult == 0) then
+			local errMsg = fetchResult or "Empty response"
+			if RayfieldDebug then
+				warn("[Rayfield Debug] Fetch failed for " .. url .. ": " .. tostring(errMsg))
 			end
-			success, result = false, fetchResult
+			success, result = false, errMsg
 			requestCompleted = true
 			return
 		end
+		
 		local content = fetchResult -- Fetched content
 		local execSuccess, execResult = pcall(function()
 			return loadstring(content)()
@@ -66,27 +79,29 @@ local function loadWithTimeout(url: string, timeout: number?): ...any
 		requestCompleted = true
 	end)
 
-	local timeoutThread = task.delay(timeout, function()
-		if not requestCompleted then
-			warn("Request for " .. url .. " timed out after " .. tostring(timeout) .. " seconds")
-			task.cancel(requestThread)
-			result = "Request timed out"
-			requestCompleted = true
+	-- Timeout handling
+	local startTime = tick()
+	while not requestCompleted and (tick() - startTime) < timeout do
+		task.wait(0.1)
+	end
+	
+	if not requestCompleted then
+		timedOut = true
+		task.cancel(requestThread)
+		if RayfieldDebug then
+			warn("[Rayfield Debug] Request for " .. url .. " timed out after " .. tostring(timeout) .. " seconds")
 		end
-	end)
-
-	-- Wait for completion or timeout
-	while not requestCompleted do
-		task.wait()
+		return nil
 	end
-	-- Cancel timeout thread if still running when request completes
-	if coroutine.status(timeoutThread) ~= "dead" then
-		task.cancel(timeoutThread)
-	end
+	
 	if not success then
-		warn("Failed to process " .. tostring(url) .. ": " .. tostring(result))
+		if RayfieldDebug then
+			warn("[Rayfield Debug] Failed to process " .. tostring(url) .. ": " .. tostring(result))
+		end
+		return nil
 	end
-	return if success then result else nil
+	
+	return result
 end
 
 local requestsDisabled = true --getgenv and getgenv().DISABLE_RAYFIELD_REQUESTS
@@ -210,14 +225,14 @@ local useStudio = RunService:IsStudio() or false
 local settingsCreated = false
 local settingsInitialized = false -- Whether the UI elements in the settings page have been set to the proper values
 local cachedSettings
-local prompt = useStudio and require(script.Parent.prompt) or loadWithTimeout('https://raw.githubusercontent.com/SiriusSoftwareLtd/Sirius/refs/heads/request/prompt.lua')
+local prompt = useStudio and require(script.Parent.prompt) or loadWithTimeout('https://raw.githubusercontent.com/SiriusSoftwareLtd/Sirius/refs/heads/request/prompt.lua', 3)
 local requestFunc = (syn and syn.request) or (fluxus and fluxus.request) or (http and http.request) or http_request or request
 
--- Validate prompt loaded correctly
-if not prompt and not useStudio then
-	warn("Failed to load prompt library, using fallback")
+-- Validate prompt loaded correctly - ALWAYS set fallback for safety
+if not prompt then
+	warn("[Rayfield] Failed to load prompt library, using no-op fallback")
 	prompt = {
-		create = function() end -- No-op fallback
+		create = function(config) end -- Safe no-op fallback
 	}
 end
 
@@ -340,11 +355,11 @@ local analyticsLib
 local sendReport = function(ev_n, sc_n) warn("Failed to load report function") end
 if not requestsDisabled then
 	if debugX then
-		warn('Querying Settings for Reporter Information')
+		warn('[Rayfield] Querying Settings for Reporter Information')
 	end	
-	analyticsLib = loadWithTimeout("https://analytics.sirius.menu/script")
+	analyticsLib = loadWithTimeout("https://analytics.sirius.menu/script", 3)
 	if not analyticsLib then
-		warn("Failed to load analytics reporter")
+		warn("[Rayfield] Failed to load analytics reporter, continuing without analytics")
 		analyticsLib = nil
 	elseif analyticsLib and type(analyticsLib.load) == "function" then
 		analyticsLib:load()
@@ -881,7 +896,13 @@ Rayfield.DisplayOrder = 100
 LoadingFrame.Version.Text = Release
 
 -- Thanks to Latte Softworks for the Lucide integration for Roblox
-local Icons = useStudio and require(script.Parent.icons) or loadWithTimeout('https://raw.githubusercontent.com/SiriusSoftwareLtd/Rayfield/refs/heads/main/icons.lua')
+local Icons = useStudio and require(script.Parent.icons) or loadWithTimeout('https://raw.githubusercontent.com/SiriusSoftwareLtd/Rayfield/refs/heads/main/icons.lua', 3)
+
+-- Safe fallback for Icons
+if not Icons then
+	warn("[Rayfield] Failed to load Icons library, Lucide icons will be disabled")
+	Icons = {['48px'] = {}} -- Empty fallback
+end
 
 local CFileName = nil
 local CEnabled = false
@@ -4538,6 +4559,7 @@ local originalCreateDropdown = nil
 function RayfieldLibrary.RegisterElement(elementName, element)
 	SafeInitSystem:Register(elementName, element)
 end
+
 
 return RayfieldLibrary
 
