@@ -855,7 +855,7 @@ if Rayfield.AbsoluteSize.X < minSize.X and Rayfield.AbsoluteSize.Y < minSize.Y t
 	useMobileSizing = true
 end
 
-if UserInputService.TouchEnabled then
+if UserInputService.TouchEnabled or (UserInputService:GetPlatform() == Enum.Platform.Android) then
 	useMobilePrompt = true
 end
 
@@ -869,6 +869,8 @@ local Elements = Main.Elements
 local LoadingFrame = Main.LoadingFrame
 local TabList = Main.TabList
 local dragBar = Rayfield:FindFirstChild('Drag')
+
+local RayfieldWindow = nil
 local dragInteract = dragBar and dragBar.Interact or nil
 local dragBarCosmetic = dragBar and dragBar.Drag or nil
 
@@ -880,7 +882,6 @@ LoadingFrame.Version.Text = Release
 
 -- Thanks to Latte Softworks for the Lucide integration for Roblox
 local Icons = useStudio and require(script.Parent.icons) or loadWithTimeout('https://raw.githubusercontent.com/SiriusSoftwareLtd/Rayfield/refs/heads/main/icons.lua')
--- Variables
 
 local CFileName = nil
 local CEnabled = false
@@ -959,6 +960,35 @@ local function ChangeTheme(Theme)
 	for _, tabbtn in ipairs(TabList:GetChildren()) do
 		if tabbtn.ClassName == 'Frame' and tabbtn.Name ~= 'Placeholder' then
 			if Elements.UIPageLayout.CurrentPage and tostring(Elements.UIPageLayout.CurrentPage) == tabbtn.Title.Text then
+				tabbtn.BackgroundColor3 = SelectedTheme.TabBackgroundSelected
+				tabbtn.BackgroundTransparency = 0
+				tabbtn.Title.TextColor3 = SelectedTheme.SelectedTabTextColor
+				tabbtn.Image.ImageColor3 = SelectedTheme.SelectedTabTextColor
+				if tabbtn:FindFirstChild('UIStroke') then
+					tabbtn.UIStroke.Transparency = 1
+				end
+			else
+				tabbtn.BackgroundColor3 = SelectedTheme.TabBackground
+				tabbtn.BackgroundTransparency = 0.7
+				tabbtn.Title.TextColor3 = SelectedTheme.TabTextColor
+				tabbtn.Image.ImageColor3 = SelectedTheme.TabTextColor
+				if tabbtn:FindFirstChild('UIStroke') then
+					tabbtn.UIStroke.Transparency = 0.5
+				end
+			end
+		end
+	end
+end
+
+local function refreshTabStyles()
+	if not TabList or not Elements or not Elements.UIPageLayout then
+		return
+	end
+
+	for _, tabbtn in ipairs(TabList:GetChildren()) do
+		if tabbtn.ClassName == 'Frame' and tabbtn.Name ~= 'Placeholder' then
+			local isSelected = Elements.UIPageLayout.CurrentPage and tostring(Elements.UIPageLayout.CurrentPage) == tabbtn.Title.Text
+			if isSelected then
 				tabbtn.BackgroundColor3 = SelectedTheme.TabBackgroundSelected
 				tabbtn.BackgroundTransparency = 0
 				tabbtn.Title.TextColor3 = SelectedTheme.SelectedTabTextColor
@@ -1371,10 +1401,12 @@ local function closeSearch()
 		if tabbtn.ClassName == 'Frame' and tabbtn.Name ~= 'Placeholder' then
 			if tostring(Elements.UIPageLayout.CurrentPage) == tabbtn.Title.Text then
 				tabbtn.BackgroundColor3 = SelectedTheme.TabBackgroundSelected
+				tabbtn.BackgroundTransparency = 0
 				tabbtn.Title.TextColor3 = SelectedTheme.SelectedTabTextColor
 				tabbtn.Image.ImageColor3 = SelectedTheme.SelectedTabTextColor
 			else
 				tabbtn.BackgroundColor3 = SelectedTheme.TabBackground
+				tabbtn.BackgroundTransparency = 0.7
 				tabbtn.Title.TextColor3 = SelectedTheme.TabTextColor
 				tabbtn.Image.ImageColor3 = SelectedTheme.TabTextColor
 			end
@@ -1549,6 +1581,7 @@ end
 
 
 local function Unhide()
+	Rayfield.Enabled = true -- ensure Rayfield is enabled before unhide animation (mobile show button works)
 	Debounce = true
 	Main.Position = UDim2.new(0.5, 0, 0.5, 0)
 	Main.Visible = true
@@ -1726,6 +1759,7 @@ end
 
 local function createSettings(window)
    if RayfieldDebug then warn('[Rayfield Debug] Entered createSettings') end
+   window = window or RayfieldWindow
    -- Check all dependencies before proceeding
    if not (writefile and isfile and readfile and isfolder and makefolder) and not useStudio then
 	   if Topbar and Topbar['Settings'] then Topbar.Settings.Visible = false end
@@ -1981,6 +2015,10 @@ function RayfieldLibrary:CreateWindow(Settings)
 			Rayfield.Loading.Visible = false
 		end
 	end
+
+	-- Ensure the Rayfield interface is enabled after CreateWindow is called,
+	-- including 2nd run and key system passthrough paths.
+	Rayfield.Enabled = true
 
 	if getgenv then getgenv().rayfieldCached = true end
 
@@ -2290,6 +2328,7 @@ function RayfieldLibrary:CreateWindow(Settings)
 					TweenService:Create(KeyMain.Hide, TweenInfo.new(0.4, Enum.EasingStyle.Exponential), {ImageTransparency = 1}):Play()
 					task.wait(0.51)
 					Passthrough = true
+					Rayfield.Enabled = true -- make sure UI shows after key unlock
 					KeyMain.Visible = false
 					if Settings.KeySettings.SaveKey then
 						callSafely(writefile, RayfieldFolder.."/Key System".."/"..Settings.KeySettings.FileName..ConfigurationExtension, FoundKey)
@@ -2344,6 +2383,7 @@ function RayfieldLibrary:CreateWindow(Settings)
 			end)
 		else
 			Passthrough = true
+			Rayfield.Enabled = true -- enable when no key system is active
 		end
 end
 	Elements.Template.LayoutOrder = 100000
@@ -2355,6 +2395,7 @@ end
 	-- Tab
 	local FirstTab = false
 	local Window = {}
+	RayfieldWindow = Window
 	function Window:CreateTab(Name, Image, Ext)
 		local SDone = false
 		local TabButton = TabList.Template:Clone()
@@ -2444,8 +2485,7 @@ end
 			TweenService:Create(TabButton.Title, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()
 		end
 
-
-		TabButton.Interact.MouseButton1Click:Connect(function()
+		refreshTabStyles()
 			if Minimised then return end
 			TweenService:Create(TabButton, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0}):Play()
 			TweenService:Create(TabButton.UIStroke, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
@@ -2470,6 +2510,7 @@ end
 			if Elements.UIPageLayout.CurrentPage ~= TabPage then
 				Elements.UIPageLayout:JumpTo(TabPage)
 			end
+			refreshTabStyles()
 		end)
 
 		local Tab = {}
@@ -4046,16 +4087,24 @@ if Topbar:FindFirstChild('Settings') then
    Topbar.Settings.MouseButton1Click:Connect(function()
 	   task.spawn(function()
 		   -- Only create the settings tab if it hasn't been created yet
-		   if Window and type(Window) == "table" then
-			   if not Window._settingsTabCreated then
+		   local win = Window or RayfieldWindow
+		   if not win then
+			   warn('[Rayfield Debug] Window is nil, cannot create settings tab.')
+			   return
+		   end
+		   if win and type(win) == "table" then
+			   if not win._settingsTabCreated then
 				   local success, result = pcall(function()
-					   createSettings(Window)
+					   createSettings(win)
 				   end)
-				   if not success then warn('Rayfield had an issue creating settings.') end
-				   Window._settingsTabCreated = true
+				   if not success then 
+					   warn('Rayfield had an issue creating settings: ' .. tostring(result))
+					   print('Error details:', result)
+				   end
+				   win._settingsTabCreated = true
 			   end
 		   else
-			   warn('[Rayfield Debug] Window is nil or not a table, cannot create settings tab.')
+			   warn('[Rayfield Debug] Window is not a valid table, cannot create settings tab.')
 		   end
 		   if TabList then
 			   for _, OtherTabButton in ipairs(TabList:GetChildren()) do
@@ -4093,6 +4142,22 @@ hideHotkeyConnection = UserInputService.InputBegan:Connect(function(input, proce
 		else
 			Hidden = true
 			Hide()
+		end
+	end
+end)
+
+-- auto-create settings tab on startup when possible
+task.spawn(function()
+	wait(0.1)
+	local win = RayfieldWindow or Window
+	if Topbar and Topbar:FindFirstChild('Settings') and win and type(win) == 'table' then
+		if not win._settingsTabCreated then
+			local success = pcall(function()
+				createSettings(win)
+			end)
+			if success then
+				win._settingsTabCreated = true
+			end
 		end
 	end
 end)
